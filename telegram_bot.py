@@ -133,8 +133,10 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Prepare for URL input
         USER_STATES[chat_id] = {"action": act_type}
+        kb = [[InlineKeyboardButton("🔙 Back to Menu", callback_data="menu_home")]]
         await query.edit_message_text(
-            f"🎯 *Selected:* `{title}`\n\n🔗 *Now send the TikTok video link:*",
+            f"🎯 *Selected:* `{title}`\n\n🔗 *Now send the TikTok video link below:*\n\n_(or tap Back to choose another action)_",
+            reply_markup=InlineKeyboardMarkup(kb),
             parse_mode="Markdown"
         )
 
@@ -215,6 +217,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
 
     elif data == "menu_home":
+        USER_STATES[chat_id] = {}
         await query.edit_message_text(
             "★ *TIKTOK MOTION BY DEE - TELEGRAM CONTROL* ★\n\nChoose an action below or send a TikTok link directly:",
             reply_markup=build_main_menu(),
