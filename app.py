@@ -76,6 +76,24 @@ def save_accounts(accounts):
         json.dump(accounts, f, indent=2)
 
 
+def is_account_logged_in(account_id):
+    """Checks if an account profile actually contains a logged-in TikTok session cookie."""
+    cookie_file = PROFILES_DIR / account_id / "Default" / "Network" / "Cookies"
+    if not cookie_file.exists():
+        return False
+    try:
+        import sqlite3
+        conn = sqlite3.connect(str(cookie_file))
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM cookies WHERE host_key LIKE '%tiktok.com%'")
+        names = [r[0] for r in cursor.fetchall()]
+        conn.close()
+        return any("sessionid" in n.lower() or "sid_guard" in n.lower() or "uid_tt" in n.lower() for n in names)
+    except Exception:
+        # Fallback to checking profile directory existence
+        return (PROFILES_DIR / account_id).exists()
+
+
 def load_comments():
     if not COMMENTS_FILE.exists():
         return ["Awesome video! 🔥", "Loved this one 🙌", "Great content, keep it up!"]
@@ -368,9 +386,8 @@ def account_manager_menu():
             print(f"{'#':<4} {'ID':<12} {'NAME':<18} {'PROXY':<25} {'STATUS':<15}")
             print("─" * 75)
             for i, acc in enumerate(accounts, 1):
-                acc_dir = PROFILES_DIR / acc['id']
-                has_profile = acc_dir.exists()
-                status = f"{GREEN}Ready{RESET}" if has_profile else f"{RED}Needs Login{RESET}"
+                logged_in = is_account_logged_in(acc['id'])
+                status = f"{GREEN}Ready (Logged In){RESET}" if logged_in else f"{RED}Needs Login{RESET}"
                 proxy_str = acc.get('proxy', '')
                 if not proxy_str:
                     proxy_display = f"{CYAN}None (Direct){RESET}"
@@ -443,7 +460,7 @@ def login_assistant_menu():
         return
 
     for i, acc in enumerate(accounts, 1):
-        status = f"{GREEN}[Saved]{RESET}" if (PROFILES_DIR / acc['id']).exists() else f"{YELLOW}[New]{RESET}"
+        status = f"{GREEN}[Logged In]{RESET}" if is_account_logged_in(acc['id']) else f"{RED}[Not Logged In]{RESET}"
         print(f"  [{i}] {acc['id']} - {acc.get('name', 'N/A')} {status}")
 
     choice = input(f"\n{YELLOW}Select account to log into (1-{len(accounts)}):{RESET} ").strip()
@@ -774,7 +791,7 @@ def main():
     while True:
         print_banner()
         accounts = load_accounts()
-        ready_count = sum(1 for a in accounts if (PROFILES_DIR / a['id']).exists())
+        ready_count = sum(1 for a in accounts if is_account_logged_in(a['id']))
         proxies = load_proxies()
 
         print(f"  Accounts: {CYAN}{len(accounts)}{RESET} (Logged In: {GREEN}{ready_count}{RESET}) | Proxies in Pool: {MAGENTA}{len(proxies)}{RESET}\n")

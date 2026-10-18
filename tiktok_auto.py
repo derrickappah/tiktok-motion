@@ -254,15 +254,49 @@ async def setup_login_session(account_id):
     ]
     proc = subprocess.Popen(cmd)
 
-    # Wait for the user to log in manually in real Chrome
-    await asyncio.to_thread(input, "Press ENTER here once you have finished logging in: ")
+    print("\n------------------------------------------------------------")
+    print(f"👉 A Google Chrome window has opened for account '{account_id}'.")
+    print("👉 Complete your login in Chrome (Email/Password, Phone, QR Code, or Google).")
+    print("👉 Solve any CAPTCHA slider puzzle if prompted.")
+    print("👉 Once you see your profile icon/For You feed in Chrome:")
+    print("   Close the Chrome window manually OR press ENTER below.")
+    print("------------------------------------------------------------\n")
 
-    # Gracefully close the browser window after user confirmation
+    # Wait for the user to finish login
+    await asyncio.to_thread(input, "Press ENTER here when you have finished logging in: ")
+
+    # Gracefully allow Chrome to flush cookies to disk before closing
+    print("[*] Saving session cookies to disk...")
+    await asyncio.sleep(2.0)
     try:
         proc.terminate()
+        proc.wait(timeout=3)
     except Exception:
-        pass
-    print(f"[+] Session saved for {account_id}!")
+        subprocess.run(["taskkill", "/F", "/IM", "chrome.exe"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    await asyncio.sleep(1.5)
+
+    # Check if session cookie was successfully written to the profile database
+    cookie_file = profile_path / "Default" / "Network" / "Cookies"
+    is_logged_in = False
+    if cookie_file.exists():
+        try:
+            import sqlite3
+            conn = sqlite3.connect(str(cookie_file))
+            cursor = conn.cursor()
+            cursor.execute("SELECT name FROM cookies WHERE host_key LIKE '%tiktok.com%'")
+            cookie_names = [row[0] for row in cursor.fetchall()]
+            conn.close()
+            if any("sessionid" in name.lower() or "sid_guard" in name.lower() or "uid_tt" in name.lower() for name in cookie_names):
+                is_logged_in = True
+        except Exception:
+            pass
+
+    if is_logged_in:
+        print(f"\n✅ SUCCESS: Login session verified & permanently saved for {account_id}!")
+    else:
+        print(f"\n⚠️ WARNING: No active TikTok session cookie was detected for {account_id}.")
+        print("   If you did not complete the login inside Chrome, please run login again.")
 
 
 
