@@ -1,109 +1,332 @@
 """
 TikTok Motion - Telegram Remote Trigger Bot
-Allows sending TikTok links directly from your phone to trigger engagement across your accounts!
+Interactive Telegram Bot with inline keyboard buttons and full feature menu!
 """
 
 import os
 import sys
 import json
+import random
 import asyncio
 from pathlib import Path
-from telegram import Update
-from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import (
+    ApplicationBuilder,
+    ContextTypes,
+    CommandHandler,
+    MessageHandler,
+    CallbackQueryHandler,
+    filters
+)
 
 BASE_DIR = Path(__file__).resolve().parent
 SETTINGS_FILE = BASE_DIR / "settings.json"
 ACCOUNTS_FILE = BASE_DIR / "accounts.json"
+COMMENTS_FILE = BASE_DIR / "comments.txt"
 PROFILES_DIR = BASE_DIR / "profiles"
+
+# Temporary memory store for user state: {chat_id: {"state": ..., "data": ...}}
+USER_STATES = {}
+
 
 def get_config():
     if not SETTINGS_FILE.exists():
         return {}
-    with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
+    try:
+        with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = str(update.effective_chat.id)
-    msg = (
-        "👋 Welcome to *TikTok Motion Remote Bot*!\n\n"
-        "Send me any TikTok link to trigger automation across your accounts.\n\n"
-        f"Your Chat ID: `{user_id}`\n\n"
-        "*Commands:*\n"
-        "• `/status` - Check logged-in accounts\n"
-        "• Send a TikTok URL directly to run engagement\n"
-    )
-    await update.message.reply_text(msg, parse_mode="Markdown")
 
-async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not ACCOUNTS_FILE.exists():
-        await update.message.reply_text("No accounts registered yet.")
-        return
-    with open(ACCOUNTS_FILE, "r", encoding="utf-8") as f:
-        accounts = json.load(f)
-    ready = sum(1 for a in accounts if (PROFILES_DIR / a['id']).exists())
-    await update.message.reply_text(
-        f"📊 *Account Status:*\nTotal Accounts: {len(accounts)}\nActive Logged In: {ready}",
-        parse_mode="Markdown"
-    )
-
-async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text.strip()
-    if "tiktok.com" not in text:
-        await update.message.reply_text("Please send a valid TikTok video link (e.g. https://vt.tiktok.com/...).")
-        return
-
+def is_authorized(update: Update) -> bool:
     config = get_config()
     allowed_chat = config.get("telegram_chat_id")
-    if allowed_chat and str(update.effective_chat.id) != str(allowed_chat):
+    if not allowed_chat:
+        return True  # If no specific chat ID locked, anyone with the bot link can use it
+    user_id = str(update.effective_chat.id)
+    return str(allowed_chat).strip() == user_id
+
+
+def build_main_menu():
+    keyboard = [
+        [
+            InlineKeyboardButton("❤️ Like Only", callback_data="act_like"),
+            InlineKeyboardButton("💬 Comment Only", callback_data="act_comment"),
+        ],
+        [
+            InlineKeyboardButton("👤 Follow Only", callback_data="act_follow"),
+            InlineKeyboardButton("🔄 Share Only", callback_data="act_share"),
+        ],
+        [
+            InlineKeyboardButton("🔖 Save / Favorite Only", callback_data="act_save"),
+            InlineKeyboardButton("🚀 Multi-Action (All)", callback_data="act_all"),
+        ],
+        [
+            InlineKeyboardButton("🧘 FYP Warm-Up", callback_data="act_warmup"),
+            InlineKeyboardButton("📊 Accounts Health", callback_data="cmd_status"),
+        ],
+        [
+            InlineKeyboardButton("💬 Comment Library", callback_data="cmd_comments"),
+            InlineKeyboardButton("⚙️ Settings / Delays", callback_data="cmd_settings"),
+        ]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+
+async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_authorized(update):
         await update.message.reply_text("⛔ Unauthorized user.")
+        return
+
+    user_id = update.effective_chat.id
+    welcome_text = (
+        "★ *TIKTOK MOTION BY DEE - TELEGRAM CONTROL* ★\n\n"
+        "Control all your TikTok accounts directly from your phone!\n\n"
+        f"📱 *Your Chat ID:* `{user_id}`\n\n"
+        "👉 *Choose an action below* or simply paste any TikTok link directly into this chat!"
+    )
+    await update.message.reply_text(welcome_text, reply_markup=build_main_menu(), parse_mode="Markdown")
+
+
+async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    if not is_authorized(update):
+        await query.edit_message_text("⛔ Unauthorized.")
+        return
+
+    data = query.data
+    chat_id = update.effective_chat.id
+
+    if data.startswith("act_"):
+        action_map = {
+            "act_like": ("Like Only", "like"),
+            "act_comment": ("Comment Only", "comment"),
+            "act_follow": ("Follow Only", "follow"),
+            "act_share": ("Share Only", "share"),
+            "act_save": ("Save Only", "save"),
+            "act_all": ("Multi-Action (Like + Comment + Share + Save)", "all"),
+            "act_warmup": ("FYP Warm-Up", "warmup")
+        }
+        title, act_type = action_map.get(data, ("Engagement", "all"))
+
+        if act_type == "warmup":
+            USER_STATES[chat_id] = {"action": "warmup"}
+            kb = [
+                [InlineKeyboardButton("⚡ 2 Minutes per Account", callback_data="warm_2")],
+                [InlineKeyboardButton("☕ 3 Minutes per Account", callback_data="warm_3")],
+                [InlineKeyboardButton("🔥 5 Minutes per Account", callback_data="warm_5")],
+                [InlineKeyboardButton("🔙 Back to Menu", callback_data="menu_home")]
+            ]
+            await query.edit_message_text(
+                "🧘 *FYP Warm-Up Mode*\n\nSurfs the For You Page, watches random clips, and likes naturally to build account trust.\n\nChoose duration:",
+                reply_markup=InlineKeyboardMarkup(kb),
+                parse_mode="Markdown"
+            )
+            return
+
+        # Prepare for URL input
+        USER_STATES[chat_id] = {"action": act_type}
+        await query.edit_message_text(
+            f"🎯 *Selected:* `{title}`\n\n🔗 *Now send the TikTok video link:*",
+            parse_mode="Markdown"
+        )
+
+    elif data.startswith("warm_"):
+        duration = int(data.split("_")[1])
+        await query.edit_message_text(f"🧘 Starting FYP Warm-Up for *{duration} minutes* per account...\nWatch your PC run!", parse_mode="Markdown")
+        asyncio.create_task(run_warmup_pipeline(update, duration))
+
+    elif data == "cmd_status":
+        accounts = []
+        if ACCOUNTS_FILE.exists():
+            with open(ACCOUNTS_FILE, "r", encoding="utf-8") as f:
+                accounts = json.load(f)
+        ready = sum(1 for a in accounts if (PROFILES_DIR / a['id']).exists())
+        status_msg = (
+            f"📊 *Accounts Dashboard:*\n\n"
+            f"• Total Accounts in file: *{len(accounts)}*\n"
+            f"• Logged In & Ready: *{ready}*\n"
+            f"• Pending Login: *{len(accounts) - ready}*\n\n"
+        )
+        for i, a in enumerate(accounts[:10], 1):
+            is_ready = (PROFILES_DIR / a['id']).exists()
+            icon = "✅" if is_ready else "⚠️"
+            status_msg += f"{icon} `{a['id']}` - {a.get('name', 'N/A')}\n"
+
+        kb = [[InlineKeyboardButton("🔙 Main Menu", callback_data="menu_home")]]
+        await query.edit_message_text(status_msg, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+
+    elif data == "cmd_comments":
+        comments = []
+        if COMMENTS_FILE.exists():
+            with open(COMMENTS_FILE, "r", encoding="utf-8") as f:
+                comments = [line.strip() for line in f if line.strip()]
+        msg = f"💬 *Comment Templates Library ({len(comments)} items):*\n\n"
+        for i, c in enumerate(comments[:8], 1):
+            msg += f"{i}. {c}\n"
+        if len(comments) > 8:
+            msg += f"_...and {len(comments) - 8} more._\n"
+        msg += "\n💡 You can edit or add more templates in the desktop menu or `comments.txt`."
+
+        kb = [[InlineKeyboardButton("🔙 Main Menu", callback_data="menu_home")]]
+        await query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+
+    elif data == "cmd_settings":
+        cfg = get_config()
+        msg = (
+            f"⚙️ *Current Settings:*\n\n"
+            f"• Minimum Delay: *{cfg.get('delay_min', 15)}s*\n"
+            f"• Maximum Delay: *{cfg.get('delay_max', 45)}s*\n"
+            f"• AI Comments: *{'Enabled (Gemini)' if cfg.get('gemini_api_key') else 'Disabled (Preset Fallback)'}*\n"
+        )
+        kb = [[InlineKeyboardButton("🔙 Main Menu", callback_data="menu_home")]]
+        await query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+
+    elif data == "menu_home":
+        await query.edit_message_text(
+            "★ *TIKTOK MOTION BY DEE - TELEGRAM CONTROL* ★\n\nChoose an action below or send a TikTok link directly:",
+            reply_markup=build_main_menu(),
+            parse_mode="Markdown"
+        )
+
+
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_authorized(update):
+        await update.message.reply_text("⛔ Unauthorized user.")
+        return
+
+    text = update.message.text.strip()
+    chat_id = update.effective_chat.id
+    user_state = USER_STATES.get(chat_id, {})
+    chosen_action = user_state.get("action", "all")
+
+    if "tiktok.com" not in text:
+        await update.message.reply_text(
+            "⚠️ Please send a valid TikTok video URL (e.g., https://vt.tiktok.com/...).",
+            reply_markup=build_main_menu()
+        )
         return
 
     # Extract clean URL
     url = [part for part in text.split() if "tiktok.com" in part][0]
-    await update.message.reply_text(f"⏳ *Received TikTok URL:* {url}\nStarting engagement pipeline across active accounts...", parse_mode="Markdown")
 
+    # Reset state
+    USER_STATES[chat_id] = {}
+
+    action_names = {
+        "like": "❤️ Like Only",
+        "comment": "💬 Comment Only",
+        "follow": "👤 Follow Only",
+        "share": "🔄 Share Only",
+        "save": "🔖 Save Only",
+        "all": "🚀 Multi-Action (Like + Comment + Share + Save)"
+    }
+    action_label = action_names.get(chosen_action, "Custom Engagement")
+
+    await update.message.reply_text(
+        f"⚡ *Task Received!*\n\n"
+        f"• *URL:* {url}\n"
+        f"• *Action:* `{action_label}`\n\n"
+        f"Starting execution across your accounts...",
+        parse_mode="Markdown"
+    )
+
+    asyncio.create_task(run_engagement_pipeline(update, url, chosen_action))
+
+
+async def run_engagement_pipeline(update: Update, url: str, action_type: str):
     from tiktok_auto import load_accounts, engage_post
     accounts = load_accounts()
     active_accounts = [a for a in accounts if (PROFILES_DIR / a['id']).exists()]
 
     if not active_accounts:
-        await update.message.reply_text("❌ No logged-in accounts available. Please log in via terminal first.")
+        await update.message.reply_text("❌ No logged-in accounts found. Please log in via `motion.bat` first.")
         return
 
+    config = get_config()
+    delay_min = config.get("delay_min", 15)
+    delay_max = config.get("delay_max", 45)
+
+    do_like = action_type in ["like", "all"]
+    do_follow = action_type in ["follow"]
+    do_share = action_type in ["share", "all"]
+    do_save = action_type in ["save", "all"]
+    comment_text = "ai" if action_type in ["comment", "all"] else None
+
     success_count = 0
+    total = len(active_accounts)
+
     for i, acc in enumerate(active_accounts):
-        await update.message.reply_text(f"Running account {i+1}/{len(active_accounts)}: `{acc['id']}`...")
+        await update.message.reply_text(f"⏳ [{i+1}/{total}] Running `{acc['id']}`...")
         res = await engage_post(
             account=acc,
             post_url=url,
-            do_like=True,
-            do_follow=False,
-            comment_text="ai", # Uses AI comment by default
-            do_share=True
+            do_like=do_like,
+            do_follow=do_follow,
+            comment_text=comment_text,
+            do_share=do_share,
+            do_save=do_save
         )
         if res:
             success_count += 1
-        await asyncio.sleep(config.get("delay_min", 15))
 
-    await update.message.reply_text(f"🎉 *Finished!* Successfully engaged on {success_count}/{len(active_accounts)} accounts.")
+        if i < total - 1:
+            cooldown = random.uniform(delay_min, delay_max)
+            await asyncio.sleep(cooldown)
+
+    done_msg = (
+        f"🎉 *Task Completed!*\n\n"
+        f"• Successful: *{success_count}/{total}*\n"
+        f"• Action: `{action_type.upper()}`\n\n"
+        f"Ready for your next link!"
+    )
+    await update.message.reply_text(done_msg, reply_markup=build_main_menu(), parse_mode="Markdown")
+
+
+async def run_warmup_pipeline(update: Update, duration_mins: int):
+    from tiktok_auto import load_accounts, warmup_account
+    accounts = load_accounts()
+    active_accounts = [a for a in accounts if (PROFILES_DIR / a['id']).exists()]
+
+    if not active_accounts:
+        await update.message.reply_text("❌ No logged-in accounts found.")
+        return
+
+    total = len(active_accounts)
+    for i, acc in enumerate(active_accounts):
+        await update.message.reply_text(f"🧘 [{i+1}/{total}] Warming up `{acc['id']}` for {duration_mins} mins...")
+        await warmup_account(acc, minutes=duration_mins)
+
+    await update.message.reply_text(
+        f"🎉 *Warm-Up Finished!*\nAll {total} accounts completed their FYP session.",
+        reply_markup=build_main_menu(),
+        parse_mode="Markdown"
+    )
+
 
 def main():
     config = get_config()
     token = config.get("telegram_bot_token")
     if not token:
-        print("[!] Telegram Bot Token not set. Please set it in Settings [9].")
+        print("[!] Telegram Bot Token not set.")
+        print("Please set your bot token in Settings via motion.bat or in settings.json.")
         return
 
     print("========================================================")
-    print("  TikTok Motion Telegram Bot Listener is RUNNING")
-    print("  Send any TikTok link from your phone to start automation!")
+    print("  TikTok Motion Telegram Bot is LIVE with Interactive UI")
+    print("  Open Telegram on your phone and tap Start!")
     print("========================================================")
 
     app = ApplicationBuilder().token(token).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("status", status))
-    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_link))
+    app.add_handler(CommandHandler("start", start_cmd))
+    app.add_handler(CommandHandler("menu", start_cmd))
+    app.add_handler(CallbackQueryHandler(button_callback))
+    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
     app.run_polling()
+
 
 if __name__ == "__main__":
     main()
