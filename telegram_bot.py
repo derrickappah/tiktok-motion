@@ -137,7 +137,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data.startswith("warm_"):
         duration = int(data.split("_")[1])
         await query.edit_message_text(f"🧘 Starting FYP Warm-Up for *{duration} minutes* per account...\nWatch your PC run!", parse_mode="Markdown")
-        asyncio.create_task(run_warmup_pipeline(update, duration))
+        asyncio.create_task(run_warmup_pipeline(chat_id, context, duration))
+
 
     elif data == "cmd_status":
         accounts = []
@@ -234,16 +235,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown"
     )
 
-    asyncio.create_task(run_engagement_pipeline(update, url, chosen_action))
+    asyncio.create_task(run_engagement_pipeline(chat_id, context, url, chosen_action))
 
 
-async def run_engagement_pipeline(update: Update, url: str, action_type: str):
+
+async def run_engagement_pipeline(chat_id: int, context: ContextTypes.DEFAULT_TYPE, url: str, action_type: str):
     from tiktok_auto import load_accounts, engage_post
     accounts = load_accounts()
     active_accounts = [a for a in accounts if (PROFILES_DIR / a['id']).exists()]
 
     if not active_accounts:
-        await update.message.reply_text("❌ No logged-in accounts found. Please log in via `motion.bat` first.")
+        await context.bot.send_message(chat_id=chat_id, text="❌ No logged-in accounts found. Please log in via `motion.bat` first.", parse_mode="Markdown")
         return
 
     config = get_config()
@@ -260,7 +262,7 @@ async def run_engagement_pipeline(update: Update, url: str, action_type: str):
     total = len(active_accounts)
 
     for i, acc in enumerate(active_accounts):
-        await update.message.reply_text(f"⏳ [{i+1}/{total}] Running `{acc['id']}`...")
+        await context.bot.send_message(chat_id=chat_id, text=f"⏳ [{i+1}/{total}] Running `{acc['id']}`...", parse_mode="Markdown")
         res = await engage_post(
             account=acc,
             post_url=url,
@@ -283,28 +285,30 @@ async def run_engagement_pipeline(update: Update, url: str, action_type: str):
         f"• Action: `{action_type.upper()}`\n\n"
         f"Ready for your next link!"
     )
-    await update.message.reply_text(done_msg, reply_markup=build_main_menu(), parse_mode="Markdown")
+    await context.bot.send_message(chat_id=chat_id, text=done_msg, reply_markup=build_main_menu(), parse_mode="Markdown")
 
 
-async def run_warmup_pipeline(update: Update, duration_mins: int):
+async def run_warmup_pipeline(chat_id: int, context: ContextTypes.DEFAULT_TYPE, duration_mins: int):
     from tiktok_auto import load_accounts, warmup_account
     accounts = load_accounts()
     active_accounts = [a for a in accounts if (PROFILES_DIR / a['id']).exists()]
 
     if not active_accounts:
-        await update.message.reply_text("❌ No logged-in accounts found.")
+        await context.bot.send_message(chat_id=chat_id, text="❌ No logged-in accounts found.", parse_mode="Markdown")
         return
 
     total = len(active_accounts)
     for i, acc in enumerate(active_accounts):
-        await update.message.reply_text(f"🧘 [{i+1}/{total}] Warming up `{acc['id']}` for {duration_mins} mins...")
+        await context.bot.send_message(chat_id=chat_id, text=f"🧘 [{i+1}/{total}] Warming up `{acc['id']}` for {duration_mins} mins...", parse_mode="Markdown")
         await warmup_account(acc, minutes=duration_mins)
 
-    await update.message.reply_text(
-        f"🎉 *Warm-Up Finished!*\nAll {total} accounts completed their FYP session.",
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text=f"🎉 *Warm-Up Finished!*\nAll {total} accounts completed their FYP session.",
         reply_markup=build_main_menu(),
         parse_mode="Markdown"
     )
+
 
 
 def main():
