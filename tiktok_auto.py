@@ -568,29 +568,75 @@ async def try_share(page, account_id):
     share_selectors = [
         'button[data-e2e="share-icon"]',
         'span[data-e2e="share-icon"]',
+        'button[data-e2e="share-btn"]',
         '[aria-label*="share" i]',
         'button:has([data-e2e="share-icon"])'
     ]
     for sel in share_selectors:
         btn = page.locator(sel).first
         if await btn.is_visible():
+            # In TikTok desktop, hovering triggers the flyout menu, and clicking opens or toggles it
             await btn.hover()
-            await asyncio.sleep(random.uniform(0.4, 0.8))
+            await asyncio.sleep(random.uniform(0.5, 0.9))
             await btn.click()
             print(f"[{account_id}] 🔄 Clicked share button.")
-            await asyncio.sleep(random.uniform(1.0, 2.0))
+            await asyncio.sleep(random.uniform(1.2, 2.0))
 
-            # Click 'Copy link' to register a share action
-            copy_link = page.locator('text="Copy link", [data-e2e="share-copy-link"]').first
-            if await copy_link.is_visible():
-                await copy_link.click()
-                print(f"[{account_id}] 📋 Copied link (Share action recorded).")
-            else:
-                # Close popup by pressing Escape
+            # Multi-strategy search for 'Copy link' button/text
+            copy_locators = [
+                page.get_by_text("Copy link", exact=False).first,
+                page.locator("xpath=//*[contains(translate(text(), 'COPY LINK', 'copy link'), 'copy link')]").first,
+                page.locator('[data-e2e="share-copy-link"]').first,
+                page.locator('[aria-label*="Copy link" i]').first,
+                page.locator('div:has-text("Copy link")').last,
+                page.locator('button:has-text("Copy link")').first
+            ]
+
+            copied = False
+            for loc in copy_locators:
+                try:
+                    if await loc.is_visible(timeout=1000):
+                        await loc.scroll_into_view_if_needed()
+                        await loc.click(force=True)
+                        print(f"[{account_id}] 📋 Copied link via UI click! (Share action recorded)")
+                        copied = True
+                        break
+                except Exception:
+                    pass
+
+            if not copied:
+                # Fallback: JavaScript DOM evaluation to find and click any element with 'Copy link'
+                clicked_js = await page.evaluate('''() => {
+                    const all = document.querySelectorAll('*');
+                    for (let el of all) {
+                        if (el.children.length === 0 && el.textContent && el.textContent.trim().toLowerCase() === 'copy link') {
+                            el.click();
+                            if (el.parentElement) el.parentElement.click();
+                            return true;
+                        }
+                    }
+                    for (let el of all) {
+                        if (el.innerText && el.innerText.trim().toLowerCase().includes('copy link')) {
+                            el.click();
+                            return true;
+                        }
+                    }
+                    return false;
+                }''')
+                if clicked_js:
+                    print(f"[{account_id}] 📋 Copied link via DOM trigger! (Share action recorded)")
+                    copied = True
+
+            if not copied:
+                # If still not clicked, close flyout gracefully
+                print(f"[{account_id}] ⚠️ Share menu opened, but 'Copy link' button was not clicked.")
                 await page.keyboard.press("Escape")
-
-            await asyncio.sleep(random.uniform(1.0, 2.0))
+            else:
+                await asyncio.sleep(random.uniform(1.0, 2.0))
+                # Press Escape to dismiss any residual popup
+                await page.keyboard.press("Escape")
             return
+
     print(f"[{account_id}] ⚠️ Share button not found.")
 
 
