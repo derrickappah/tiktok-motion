@@ -1,0 +1,16 @@
+# Python cache
+__pycache__/
+*.pyc
+
+# Chrome browser profile sessions & cookies (Sensitive personal logins)
+profiles/
+chrome_profile/
+
+# API keys and personal tokens
+settings.json
+
+# Temporary screenshots & debug logs
+*.png
+debug_*.py
+inspect_*.py
+check_acc1.py

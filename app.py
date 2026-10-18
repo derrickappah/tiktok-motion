@@ -1,0 +1,704 @@
+"""
+====================================================================
+           TIKTOK MOTION BY DEE - TERMINAL APPLICATION
+====================================================================
+Interactive Multi-Account Automation Suite for TikTok
+"""
+
+import os
+import sys
+import json
+import time
+import random
+import asyncio
+import subprocess
+from pathlib import Path
+
+# Paths
+BASE_DIR = Path(__file__).resolve().parent
+ACCOUNTS_FILE = BASE_DIR / "accounts.json"
+COMMENTS_FILE = BASE_DIR / "comments.txt"
+SETTINGS_FILE = BASE_DIR / "settings.json"
+PROFILES_DIR = BASE_DIR / "profiles"
+
+# Colors for terminal styling (ANSI)
+CYAN = "\033[96m"
+GREEN = "\033[92m"
+YELLOW = "\033[93m"
+RED = "\033[91m"
+MAGENTA = "\033[95m"
+BOLD = "\033[1m"
+RESET = "\033[0m"
+
+
+def clear_screen():
+    os.system("cls" if os.name == "nt" else "clear")
+
+
+def print_banner():
+    clear_screen()
+    print(f"{CYAN}{BOLD}")
+    print(r"""
+  ████████╗██╗██╗  ██╗████████╗ ██████╗ ██╗  ██╗
+  ╚══██╔══╝██║██║ ██╔╝╚══██╔══╝██╔═══██╗██║ ██╔╝
+     ██║   ██║█████╔╝    ██║   ██║   ██║█████╔╝ 
+     ██║   ██║██╔═██╗    ██║   ██║   ██║██╔═██╗ 
+     ██║   ██║██║  ██╗   ██║   ╚██████╔╝██║  ██╗
+     ╚═╝   ╚═╝╚═╝  ╚═╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝ 
+        ███╗   ███╗ ██████╗ ████████╗██╗ ██████╗ ███╗   ██╗
+        ████╗ ████║██╔═══██╗╚══██╔══╝██║██╔═══██╗████╗  ██║
+        ██╔████╔██║██║   ██║   ██║   ██║██║   ██║██╔██╗ ██║
+        ██║╚██╔╝██║██║   ██║   ██║   ██║██║   ██║██║╚██╗██║
+        ██║ ╚═╝ ██║╚██████╔╝   ██║   ██║╚██████╔╝██║ ╚████║
+        ╚═╝     ╚═╝ ╚═════╝    ╚═╝   ╚═╝ ╚═════╝ ╚═╝  ╚═══╝
+    """)
+    print(f"             {MAGENTA}★ TikTok Motion by Dee ★{RESET}")
+    print(f"{CYAN}  ════════════════════════════════════════════════════════{RESET}\n")
+
+
+# -------------------------------------------------------------
+# Data Managers (Accounts, Comments, Settings)
+# -------------------------------------------------------------
+
+def load_accounts():
+    if not ACCOUNTS_FILE.exists():
+        return []
+    try:
+        with open(ACCOUNTS_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return []
+
+
+def save_accounts(accounts):
+    with open(ACCOUNTS_FILE, "w", encoding="utf-8") as f:
+        json.dump(accounts, f, indent=2)
+
+
+def load_comments():
+    if not COMMENTS_FILE.exists():
+        return ["Awesome video! 🔥", "Loved this one 🙌", "Great content, keep it up!"]
+    with open(COMMENTS_FILE, "r", encoding="utf-8") as f:
+        lines = [line.strip() for line in f if line.strip()]
+        return lines if lines else ["Awesome video! 🔥"]
+
+
+def save_comments(comments):
+    with open(COMMENTS_FILE, "w", encoding="utf-8") as f:
+        for c in comments:
+            f.write(c.strip() + "\n")
+
+
+def load_settings():
+    default_settings = {
+        "delay_min": 15,
+        "delay_max": 45,
+        "default_actions": {
+            "like": True,
+            "follow": False,
+            "comment": True
+        }
+    }
+    if not SETTINGS_FILE.exists():
+        return default_settings
+    try:
+        with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return default_settings
+
+
+def save_settings(settings):
+    with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+        json.dump(settings, f, indent=2)
+
+
+# -------------------------------------------------------------
+# Feature 1: Run Post Engagement
+# -------------------------------------------------------------
+
+def run_engagement_menu():
+    print_banner()
+    print(f"{BOLD}[1] 🚀 ENGAGE TIKTOK POST{RESET}\n")
+
+    accounts = load_accounts()
+    if not accounts:
+        print(f"{RED}[!] No accounts found. Please add accounts first.{RESET}")
+        input("\nPress ENTER to continue...")
+        return
+
+    post_url = input(f"{YELLOW}Enter TikTok Post URL:{RESET} ").strip()
+    if not post_url:
+        print(f"{RED}[!] URL cannot be empty.{RESET}")
+        input("\nPress ENTER to continue...")
+        return
+
+    # Account selection
+    print(f"\n{BOLD}Select accounts to run:{RESET}")
+    print("  [A] All accounts")
+    for i, acc in enumerate(accounts, 1):
+        status = "✅ Ready" if (PROFILES_DIR / acc['id']).exists() else "⚠️ Not logged in"
+        print(f"  [{i}] {acc['id']} ({acc.get('name', 'N/A')}) - {status}")
+
+    acc_choice = input(f"\n{YELLOW}Choose accounts (e.g. 'A' or '1,2,3'):{RESET} ").strip().upper()
+    if acc_choice == "A":
+        target_accounts = accounts
+    else:
+        try:
+            indexes = [int(x.strip()) - 1 for x in acc_choice.split(",") if x.strip().isdigit()]
+            target_accounts = [accounts[i] for i in indexes if 0 <= i < len(accounts)]
+        except Exception:
+            target_accounts = accounts
+
+    if not target_accounts:
+        print(f"{RED}[!] No valid accounts selected.{RESET}")
+        input("\nPress ENTER to continue...")
+        return
+
+    # Actions selection
+    settings = load_settings()
+    print(f"\n{BOLD}Choose Actions to Perform:{RESET}")
+    do_like = input(f"Like the video? (Y/n) [{ 'Y' if settings['default_actions']['like'] else 'N' }]: ").strip().lower()
+    do_like = (do_like != "n") if settings['default_actions']['like'] else (do_like == "y")
+
+    do_follow = input(f"Follow the creator? (y/N) [{ 'Y' if settings['default_actions']['follow'] else 'N' }]: ").strip().lower()
+    do_follow = (do_follow == "y") if not settings['default_actions']['follow'] else (do_follow != "n")
+
+    do_comment = input(f"Leave a comment? (Y/n) [{ 'Y' if settings['default_actions']['comment'] else 'N' }]: ").strip().lower()
+    do_comment = (do_comment != "n") if settings['default_actions']['comment'] else (do_comment == "y")
+
+    do_share = input(f"Share / Copy link? (y/N): ").strip().lower() == "y"
+    do_save = input(f"Save / Bookmark video? (y/N): ").strip().lower() == "y"
+
+    comment_choice = None
+    if do_comment:
+        comments = load_comments()
+        print(f"\n{BOLD}Comment Options:{RESET}")
+        print("  [1] 🤖 AI Auto-Generated (From Video Caption)")
+        print("  [2] 🎲 Random from Comment Templates Library")
+        print("  [3] ✍️  Enter custom comment for all accounts")
+        c_mode = input(f"{YELLOW}Select comment mode [1-3]:{RESET} ").strip()
+        if c_mode == "1":
+            comment_choice = "ai"
+        elif c_mode == "3":
+            comment_choice = input("Enter your custom comment: ").strip()
+        else:
+            comment_choice = "random"
+
+    # Execution summary
+    print(f"\n{CYAN}========================================================")
+    print(f"  Target URL: {post_url}")
+    print(f"  Accounts: {len(target_accounts)}")
+    print(f"  Actions: Like={do_like}, Follow={do_follow}, Comment={do_comment}, Share={do_share}, Save={do_save}")
+    print(f"  Delays: {settings['delay_min']}s - {settings['delay_max']}s")
+    print(f"========================================================{RESET}\n")
+
+    confirm = input("Start engagement now? (Y/n): ").strip().lower()
+    if confirm == "n":
+        return
+
+    # Import and run engine
+    from tiktok_auto import engage_post
+
+    async def execute_all():
+        for i, acc in enumerate(target_accounts):
+            comment_text = comment_choice
+            if comment_choice == "random":
+                comment_text = random.choice(load_comments())
+
+            print(f"\n{BOLD}[{i+1}/{len(target_accounts)}] Running {acc['id']}...{RESET}")
+            await engage_post(
+                account=acc,
+                post_url=post_url,
+                do_like=do_like,
+                do_follow=do_follow,
+                comment_text=comment_text if do_comment else None,
+                do_share=do_share,
+                do_save=do_save
+            )
+
+
+            if i < len(target_accounts) - 1:
+                cooldown = random.uniform(settings["delay_min"], settings["delay_max"])
+                print(f"{YELLOW}[⏳] Cooling down for {cooldown:.1f}s before next account...{RESET}")
+                await asyncio.sleep(cooldown)
+
+        print(f"\n{GREEN}{BOLD}[🎉] All accounts finished engagement!{RESET}")
+
+    asyncio.run(execute_all())
+    input("\nPress ENTER to return to menu...")
+
+
+def run_single_action_flow(action_type):
+    """Executes a single focused action (like, comment, follow, share, or save) across selected accounts."""
+    action_titles = {
+        "like": "❤️ LIKE POST ONLY",
+        "comment": "💬 COMMENT ON POST ONLY",
+        "follow": "👤 FOLLOW CREATOR ONLY",
+        "share": "🔄 SHARE / COPY LINK ONLY",
+        "save": "🔖 SAVE / FAVORITE POST ONLY"
+    }
+
+
+    print_banner()
+    print(f"{BOLD}[{action_titles.get(action_type, 'ENGAGEMENT')}]{RESET}\n")
+
+    accounts = load_accounts()
+    if not accounts:
+        print(f"{RED}[!] No accounts found. Please add accounts first.{RESET}")
+        input("\nPress ENTER to continue...")
+        return
+
+    post_url = input(f"{YELLOW}Enter TikTok Post URL:{RESET} ").strip()
+    if not post_url:
+        print(f"{RED}[!] URL cannot be empty.{RESET}")
+        input("\nPress ENTER to continue...")
+        return
+
+    # Account selection
+    print(f"\n{BOLD}Select accounts to run:{RESET}")
+    print("  [A] All accounts")
+    for i, acc in enumerate(accounts, 1):
+        status = "✅ Ready" if (PROFILES_DIR / acc['id']).exists() else "⚠️ Not logged in"
+        print(f"  [{i}] {acc['id']} ({acc.get('name', 'N/A')}) - {status}")
+
+    acc_choice = input(f"\n{YELLOW}Choose accounts (e.g. 'A' or '1,2,3'):{RESET} ").strip().upper()
+    if acc_choice == "A":
+        target_accounts = accounts
+    else:
+        try:
+            indexes = [int(x.strip()) - 1 for x in acc_choice.split(",") if x.strip().isdigit()]
+            target_accounts = [accounts[i] for i in indexes if 0 <= i < len(accounts)]
+        except Exception:
+            target_accounts = accounts
+
+    if not target_accounts:
+        print(f"{RED}[!] No valid accounts selected.{RESET}")
+        input("\nPress ENTER to continue...")
+        return
+
+    # Specific setup for comments
+    comment_choice = None
+    if action_type == "comment":
+        comments = load_comments()
+        print(f"\n{BOLD}Comment Options:{RESET}")
+        print("  [1] 🤖 AI Auto-Generated (Reads video caption & writes custom comment)")
+        print("  [2] 🎲 Random from Comment Templates Library")
+        print("  [3] ✍️  Enter custom comment for all accounts")
+        c_mode = input(f"{YELLOW}Select comment mode [1-3]:{RESET} ").strip()
+        if c_mode == "1":
+            comment_choice = "ai"
+        elif c_mode == "3":
+            comment_choice = input("Enter your custom comment: ").strip()
+        else:
+            comment_choice = "random"
+
+
+    settings = load_settings()
+    print(f"\n{CYAN}========================================================")
+    print(f"  Target URL: {post_url}")
+    print(f"  Action: {action_titles.get(action_type)}")
+    print(f"  Accounts: {len(target_accounts)}")
+    print(f"  Delays: {settings['delay_min']}s - {settings['delay_max']}s")
+    print(f"========================================================{RESET}\n")
+
+    confirm = input("Start now? (Y/n): ").strip().lower()
+    if confirm == "n":
+        return
+
+    from tiktok_auto import engage_post
+
+    async def execute():
+        for i, acc in enumerate(target_accounts):
+            c_text = None
+            if action_type == "comment":
+                c_text = random.choice(load_comments()) if comment_choice == "random" else comment_choice
+
+            print(f"\n{BOLD}[{i+1}/{len(target_accounts)}] Running {acc['id']} ({action_type})...{RESET}")
+            await engage_post(
+                account=acc,
+                post_url=post_url,
+                do_like=(action_type == "like"),
+                do_follow=(action_type == "follow"),
+                comment_text=c_text,
+                do_share=(action_type == "share"),
+                do_save=(action_type == "save")
+            )
+
+
+            if i < len(target_accounts) - 1:
+                cooldown = random.uniform(settings["delay_min"], settings["delay_max"])
+                print(f"{YELLOW}[⏳] Cooling down for {cooldown:.1f}s before next account...{RESET}")
+                await asyncio.sleep(cooldown)
+
+        print(f"\n{GREEN}{BOLD}[🎉] Task finished for all selected accounts!{RESET}")
+
+    asyncio.run(execute())
+    input("\nPress ENTER to return to menu...")
+
+
+
+# -------------------------------------------------------------
+# Feature 2: Account Manager & Health Check
+# -------------------------------------------------------------
+
+def account_manager_menu():
+    while True:
+        print_banner()
+        print(f"{BOLD}[2] 👤 ACCOUNT MANAGER & HEALTH CHECK{RESET}\n")
+
+        accounts = load_accounts()
+        if not accounts:
+            print(f"{YELLOW}No accounts registered yet.{RESET}\n")
+        else:
+            print(f"{'#':<4} {'ID':<12} {'NAME':<18} {'PROXY':<25} {'STATUS':<15}")
+            print("─" * 75)
+            for i, acc in enumerate(accounts, 1):
+                acc_dir = PROFILES_DIR / acc['id']
+                has_profile = acc_dir.exists()
+                status = f"{GREEN}Ready{RESET}" if has_profile else f"{RED}Needs Login{RESET}"
+                proxy_str = acc.get('proxy', '')
+                if not proxy_str:
+                    proxy_display = f"{CYAN}None (Direct){RESET}"
+                else:
+                    proxy_display = proxy_str[:22] + "..." if len(proxy_str) > 22 else proxy_str
+                print(f"{i:<4} {acc['id']:<12} {acc.get('name', 'N/A')[:16]:<18} {proxy_display:<34} {status}")
+
+        print(f"\n{BOLD}Actions:{RESET}")
+        print("  [1] Add New Account")
+        print("  [2] Delete an Account")
+        print("  [3] Edit Account Proxy")
+        print("  [0] Back to Main Menu")
+
+        choice = input(f"\n{YELLOW}Select an option:{RESET} ").strip()
+
+        if choice == "1":
+            new_id = input("Enter new Account ID (e.g. acc_11): ").strip()
+            if not new_id:
+                continue
+            if any(a['id'] == new_id for a in accounts):
+                print(f"{RED}[!] Account ID already exists.{RESET}")
+                time.sleep(1.5)
+                continue
+            name = input("Enter nickname / display name: ").strip() or new_id
+            proxy = input("Enter proxy (optional, press ENTER to skip): ").strip()
+            accounts.append({"id": new_id, "name": name, "proxy": proxy})
+            save_accounts(accounts)
+            print(f"{GREEN}[+] Account {new_id} added!{RESET}")
+            time.sleep(1.2)
+
+        elif choice == "2":
+            del_id = input("Enter Account ID to delete: ").strip()
+            new_list = [a for a in accounts if a['id'] != del_id]
+            if len(new_list) < len(accounts):
+                save_accounts(new_list)
+                print(f"{GREEN}[+] Account {del_id} deleted.{RESET}")
+            else:
+                print(f"{RED}[!] Account ID not found.{RESET}")
+            time.sleep(1.2)
+
+        elif choice == "3":
+            target_id = input("Enter Account ID to configure proxy: ").strip()
+            target_acc = next((a for a in accounts if a['id'] == target_id), None)
+            if target_acc:
+                print(f"Current proxy: {target_acc.get('proxy') or 'None'}")
+                new_px = input("Enter new proxy (or leave blank to remove): ").strip()
+                target_acc["proxy"] = new_px
+                save_accounts(accounts)
+                print(f"{GREEN}[+] Proxy updated for {target_id}!{RESET}")
+            else:
+                print(f"{RED}[!] Account not found.{RESET}")
+            time.sleep(1.2)
+
+        elif choice == "0":
+            break
+
+
+# -------------------------------------------------------------
+# Feature 3: Real Chrome Login Assistant
+# -------------------------------------------------------------
+
+def login_assistant_menu():
+    print_banner()
+    print(f"{BOLD}[3] 🔑 LOG INTO AN ACCOUNT (REAL CHROME){RESET}\n")
+
+    accounts = load_accounts()
+    if not accounts:
+        print(f"{RED}[!] No accounts registered yet.{RESET}")
+        input("\nPress ENTER to continue...")
+        return
+
+    for i, acc in enumerate(accounts, 1):
+        status = f"{GREEN}[Saved]{RESET}" if (PROFILES_DIR / acc['id']).exists() else f"{YELLOW}[New]{RESET}"
+        print(f"  [{i}] {acc['id']} - {acc.get('name', 'N/A')} {status}")
+
+    choice = input(f"\n{YELLOW}Select account to log into (1-{len(accounts)}):{RESET} ").strip()
+    if not choice.isdigit() or int(choice) < 1 or int(choice) > len(accounts):
+        return
+
+    selected_account = accounts[int(choice) - 1]
+    account_id = selected_account['id']
+
+    from tiktok_auto import setup_login_session
+    asyncio.run(setup_login_session(account_id))
+    input("\nPress ENTER to return to menu...")
+
+
+# -------------------------------------------------------------
+# Feature 4: Comment Templates Library
+# -------------------------------------------------------------
+
+def comment_library_menu():
+    while True:
+        print_banner()
+        print(f"{BOLD}[4] 💬 COMMENT TEMPLATES LIBRARY{RESET}\n")
+
+        comments = load_comments()
+        print(f"Registered comments ({len(comments)} total):\n")
+        for i, c in enumerate(comments, 1):
+            print(f"  [{i:2d}] {c}")
+
+        print(f"\n{BOLD}Actions:{RESET}")
+        print("  [1] Add New Comment Template")
+        print("  [2] Delete a Comment Template")
+        print("  [3] Clear All and Load Defaults")
+        print("  [0] Back to Main Menu")
+
+        choice = input(f"\n{YELLOW}Select an option:{RESET} ").strip()
+
+        if choice == "1":
+            new_c = input("Enter comment text: ").strip()
+            if new_c:
+                comments.append(new_c)
+                save_comments(comments)
+                print(f"{GREEN}[+] Added comment!{RESET}")
+                time.sleep(1.0)
+
+        elif choice == "2":
+            idx = input(f"Enter comment number to delete (1-{len(comments)}): ").strip()
+            if idx.isdigit() and 1 <= int(idx) <= len(comments):
+                removed = comments.pop(int(idx) - 1)
+                save_comments(comments)
+                print(f"{GREEN}[+] Removed: \"{removed}\"{RESET}")
+                time.sleep(1.0)
+
+        elif choice == "3":
+            defaults = [
+                "Awesome video! 🔥", "Loved this one 🙌", "Great content, keep it up!",
+                "So true haha 😂", "Nice post! 👍", "This is pure gold ✨",
+                "Super interesting perspective 👏", "Saved for later!"
+            ]
+            save_comments(defaults)
+            print(f"{GREEN}[+] Reset comments to defaults!{RESET}")
+            time.sleep(1.0)
+
+        elif choice == "0":
+            break
+
+
+# -------------------------------------------------------------
+# Feature 5: Speed & Delay Settings
+# -------------------------------------------------------------
+
+def settings_menu():
+    while True:
+        print_banner()
+        print(f"{BOLD}[5] ⚙️ SPEED & DELAY SETTINGS{RESET}\n")
+
+        settings = load_settings()
+        print(f"  Minimum Delay between accounts: {CYAN}{settings['delay_min']} seconds{RESET}")
+        print(f"  Maximum Delay between accounts: {CYAN}{settings['delay_max']} seconds{RESET}")
+        print(f"  Default Like:    {CYAN}{settings['default_actions']['like']}{RESET}")
+        print(f"  Default Follow:  {CYAN}{settings['default_actions']['follow']}{RESET}")
+        print(f"  Default Comment: {CYAN}{settings['default_actions']['comment']}{RESET}")
+
+        print(f"\n{BOLD}Actions:{RESET}")
+        print("  [1] Change Delays (Cooldown between accounts)")
+        print("  [2] Configure Gemini API Key (AI Comments)")
+        print("  [3] Configure Telegram Bot (Remote Control)")
+        print("  [0] Back to Main Menu")
+
+        choice = input(f"\n{YELLOW}Select an option:{RESET} ").strip()
+
+        if choice == "1":
+            try:
+                min_d = int(input("Enter minimum delay (seconds): "))
+                max_d = int(input("Enter maximum delay (seconds): "))
+                if min_d > 0 and max_d >= min_d:
+                    settings["delay_min"] = min_d
+                    settings["delay_max"] = max_d
+                    save_settings(settings)
+                    print(f"{GREEN}[+] Delays updated!{RESET}")
+                else:
+                    print(f"{RED}[!] Maximum must be greater than minimum.{RESET}")
+            except ValueError:
+                print(f"{RED}[!] Please enter valid numbers.{RESET}")
+            time.sleep(1.2)
+
+        elif choice == "2":
+            curr = settings.get("gemini_api_key", "")
+            print(f"Current Gemini API Key: {curr[:8]}... (or blank)" if curr else "None")
+            new_key = input("Enter Gemini API Key (or leave blank to remove): ").strip()
+            settings["gemini_api_key"] = new_key
+            save_settings(settings)
+            print(f"{GREEN}[+] Gemini API Key saved!{RESET}")
+            time.sleep(1.2)
+
+        elif choice == "3":
+            print(f"Current Bot Token: {settings.get('telegram_bot_token', 'None')}")
+            new_tok = input("Enter Telegram Bot Token: ").strip()
+            if new_tok:
+                settings["telegram_bot_token"] = new_tok
+            new_cid = input("Enter your allowed Telegram Chat ID (optional, press Enter to allow anyone): ").strip()
+            settings["telegram_chat_id"] = new_cid
+            save_settings(settings)
+            print(f"{GREEN}[+] Telegram settings saved!{RESET}")
+            time.sleep(1.2)
+
+        elif choice == "0":
+            break
+
+
+def run_warmup_flow():
+    """Warms up accounts by scrolling the For You Page and watching random videos."""
+    print_banner()
+    print(f"{BOLD}[🧘 FOR YOU PAGE WARM-UP MODE]{RESET}\n")
+
+    accounts = load_accounts()
+    if not accounts:
+        print(f"{RED}[!] No accounts found.{RESET}")
+        input("\nPress ENTER to continue...")
+        return
+
+    print("Warming up simulates real human behavior by surfing TikTok's FYP, watching clips, and liking random videos.")
+    print("This builds high account trust score and protects accounts from shadowbans.\n")
+
+    print(f"{BOLD}Select accounts to warm up:{RESET}")
+    print("  [A] All accounts")
+    for i, acc in enumerate(accounts, 1):
+        status = "✅ Ready" if (PROFILES_DIR / acc['id']).exists() else "⚠️ Not logged in"
+        print(f"  [{i}] {acc['id']} - {status}")
+
+    choice = input(f"\n{YELLOW}Choose accounts (e.g. 'A' or '1'):{RESET} ").strip().upper()
+    if choice == "A":
+        target = accounts
+    else:
+        try:
+            indexes = [int(x.strip()) - 1 for x in choice.split(",") if x.strip().isdigit()]
+            target = [accounts[i] for i in indexes if 0 <= i < len(accounts)]
+        except Exception:
+            target = accounts
+
+    try:
+        minutes = float(input(f"\nEnter warm-up duration per account in minutes [default: 3]: ").strip() or "3")
+    except ValueError:
+        minutes = 3.0
+
+    from tiktok_auto import warmup_account
+
+    async def execute():
+        for i, acc in enumerate(target):
+            print(f"\n{BOLD}[{i+1}/{len(target)}] Warming up {acc['id']} for {minutes:.1f} mins...{RESET}")
+            await warmup_account(acc, minutes=minutes)
+            if i < len(target) - 1:
+                await asyncio.sleep(random.uniform(5, 10))
+        print(f"\n{GREEN}{BOLD}[🎉] All accounts successfully warmed up!{RESET}")
+
+    asyncio.run(execute())
+    input("\nPress ENTER to return to menu...")
+
+
+def run_telegram_bot_flow():
+    """Starts the Telegram bot listener in a separate window or directly."""
+    print_banner()
+    print(f"{BOLD}[📲 TELEGRAM REMOTE TRIGGER BOT]{RESET}\n")
+
+    settings = load_settings()
+    token = settings.get("telegram_bot_token")
+    if not token:
+        print(f"{YELLOW}[!] Telegram bot token not configured yet.{RESET}")
+        print("1. Open Telegram and search for @BotFather")
+        print("2. Send /newbot to create a bot and copy your token.")
+        print("3. Enter your token below:\n")
+        new_tok = input("Enter Telegram Bot Token: ").strip()
+        if not new_tok:
+            return
+        settings["telegram_bot_token"] = new_tok
+        save_settings(settings)
+
+    print(f"\n{GREEN}[*] Launching Telegram Listener in a new terminal window...{RESET}")
+    import subprocess
+    cmd = [
+        "cmd.exe", "/c", "start", "TikTok Motion Telegram Bot",
+        r"C:\Users\DELL\AppData\Local\Programs\Python\Python312\python.exe",
+        "telegram_bot.py"
+    ]
+    subprocess.Popen(cmd)
+    print(f"{CYAN}[+] Bot is running in the background! Send links from your phone anytime.{RESET}")
+    input("\nPress ENTER to return to menu...")
+
+
+# -------------------------------------------------------------
+# Main Application Loop
+# -------------------------------------------------------------
+
+def main():
+    while True:
+        print_banner()
+        accounts = load_accounts()
+        ready_count = sum(1 for a in accounts if (PROFILES_DIR / a['id']).exists())
+
+        print(f"  Accounts Loaded: {CYAN}{len(accounts)}{RESET} | Logged In: {GREEN}{ready_count}{RESET} | Pending: {YELLOW}{len(accounts) - ready_count}{RESET}\n")
+        print(f"  {BOLD}--- ACTIONS ON POST ---{RESET}")
+        print(f"  {BOLD}[1]{RESET} ❤️  Like Post Only")
+        print(f"  {BOLD}[2]{RESET} 💬 Comment on Post Only (Presets or AI)")
+        print(f"  {BOLD}[3]{RESET} 👤 Follow Creator Only")
+        print(f"  {BOLD}[4]{RESET} 🔄 Share / Copy Link Only")
+        print(f"  {BOLD}[5]{RESET} 🔖 Save / Favorite Post Only")
+        print(f"  {BOLD}[6]{RESET} 🚀 Custom Multi-Action (Combine Any Actions)")
+        print(f"\n  {BOLD}--- AUTOMATION & SAFETY ---{RESET}")
+        print(f"  {BOLD}[7]{RESET} 🧘 FYP Warm-up Mode (Surfs feed, builds trust)")
+        print(f"  {BOLD}[8]{RESET} 📲 Start Telegram Remote Bot (Send links via phone)")
+        print(f"\n  {BOLD}--- MANAGEMENT ---{RESET}")
+        print(f"  {BOLD}[9]{RESET} 📋 Account Manager & Health Check")
+        print(f"  {BOLD}[10]{RESET} 🔑 Log Into an Account (Real Chrome)")
+        print(f"  {BOLD}[11]{RESET} 💬 Comment Templates Library")
+        print(f"  {BOLD}[12]{RESET} ⚙️ Settings (Delays, AI Keys, Telegram)")
+        print(f"  {BOLD}[0]{RESET} 🚪 Exit\n")
+
+        choice = input(f"{YELLOW}Select an option [0-12]:{RESET} ").strip()
+
+        if choice == "1":
+            run_single_action_flow("like")
+        elif choice == "2":
+            run_single_action_flow("comment")
+        elif choice == "3":
+            run_single_action_flow("follow")
+        elif choice == "4":
+            run_single_action_flow("share")
+        elif choice == "5":
+            run_single_action_flow("save")
+        elif choice == "6":
+            run_engagement_menu()
+        elif choice == "7":
+            run_warmup_flow()
+        elif choice == "8":
+            run_telegram_bot_flow()
+        elif choice == "9":
+            account_manager_menu()
+        elif choice == "10":
+            login_assistant_menu()
+        elif choice == "11":
+            comment_library_menu()
+        elif choice == "12":
+            settings_menu()
+        elif choice == "0":
+            print(f"\n{CYAN}Thanks for using TikTok Motion by Dee! Goodbye.{RESET}\n")
+            sys.exit(0)
+
+
+
+
+
+if __name__ == "__main__":
+    main()
