@@ -237,15 +237,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_state = USER_STATES.get(chat_id, {})
     chosen_action = user_state.get("action", "all")
 
-    if "tiktok.com" not in text:
+    urls = []
+    for line in text.splitlines():
+        for piece in line.split():
+            if "tiktok.com" in piece and piece not in urls:
+                urls.append(piece)
+
+    if not urls:
         await update.message.reply_text(
-            "⚠️ Please send a valid TikTok video URL (e.g., https://vt.tiktok.com/...).",
+            "⚠️ Please send valid TikTok video URL(s) (e.g., https://vt.tiktok.com/...).",
             reply_markup=build_main_menu()
         )
         return
-
-    # Extract clean URL
-    url = [part for part in text.split() if "tiktok.com" in part][0]
 
     # Reset state
     USER_STATES[chat_id] = {}
@@ -261,19 +264,24 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     }
     action_label = action_names.get(chosen_action, "Custom Engagement")
 
+    url_summary = "\n".join([f"• `{u}`" for u in urls[:5]])
+    if len(urls) > 5:
+        url_summary += f"\n_...and {len(urls) - 5} more._"
+
     await update.message.reply_text(
         f"⚡ *Task Received!*\n\n"
-        f"• *URL:* {url}\n"
+        f"• *Queue Size:* {len(urls)} video(s)\n"
         f"• *Action:* `{action_label}`\n\n"
-        f"Starting execution across your accounts...",
+        f"*Target Queue:*\n{url_summary}\n\n"
+        f"Starting queue execution from top to down...",
         parse_mode="Markdown"
     )
 
-    asyncio.create_task(run_engagement_pipeline(chat_id, context, url, chosen_action))
+    asyncio.create_task(run_engagement_pipeline(chat_id, context, urls, chosen_action))
 
 
 
-async def run_engagement_pipeline(chat_id: int, context: ContextTypes.DEFAULT_TYPE, url: str, action_type: str):
+async def run_engagement_pipeline(chat_id: int, context: ContextTypes.DEFAULT_TYPE, urls: list[str], action_type: str):
     from tiktok_auto import load_accounts, engage_post
     accounts = load_accounts()
     active_accounts = [a for a in accounts if (PROFILES_DIR / a['id']).exists()]
@@ -293,36 +301,49 @@ async def run_engagement_pipeline(chat_id: int, context: ContextTypes.DEFAULT_TY
     do_repost = action_type in ["repost", "all"]
     comment_text = "ai" if action_type in ["comment", "all"] else None
 
-    # Randomize execution order of active accounts
-    random.shuffle(active_accounts)
+    total_urls = len(urls)
+    total_accs = len(active_accounts)
 
-    success_count = 0
-    total = len(active_accounts)
-
-    for i, acc in enumerate(active_accounts):
-        await context.bot.send_message(chat_id=chat_id, text=f"⏳ [{i+1}/{total}] Running `{acc['id']}`...", parse_mode="Markdown")
-        res = await engage_post(
-            account=acc,
-            post_url=url,
-            do_like=do_like,
-            do_follow=do_follow,
-            comment_text=comment_text,
-            do_share=do_share,
-            do_save=do_save,
-            do_repost=do_repost
+    for u_idx, current_url in enumerate(urls, 1):
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=f"▶️ *Processing Video [{u_idx}/{total_urls}]:*\n`{current_url}`",
+            parse_mode="Markdown"
         )
-        if res:
-            success_count += 1
 
-        if i < total - 1:
-            cooldown = random.uniform(delay_min, delay_max)
-            await asyncio.sleep(cooldown)
+        # Randomize execution order of accounts for each video
+        exec_accounts = list(active_accounts)
+        random.shuffle(exec_accounts)
+
+        success_count = 0
+        for i, acc in enumerate(exec_accounts):
+            await context.bot.send_message(chat_id=chat_id, text=f"⏳ [Video {u_idx}/{total_urls} | Acc {i+1}/{total_accs}] Running `{acc['id']}`...", parse_mode="Markdown")
+            res = await engage_post(
+                account=acc,
+                post_url=current_url,
+                do_like=do_like,
+                do_follow=do_follow,
+                comment_text=comment_text,
+                do_share=do_share,
+                do_save=do_save,
+                do_repost=do_repost
+            )
+            if res:
+                success_count += 1
+
+            if i < total_accs - 1:
+                cooldown = random.uniform(delay_min, delay_max)
+                await asyncio.sleep(cooldown)
+
+        if u_idx < total_urls:
+            await context.bot.send_message(chat_id=chat_id, text=f"⏸️ Video {u_idx} done. Cooling down 5s before next video...", parse_mode="Markdown")
+            await asyncio.sleep(5.0)
 
     done_msg = (
-        f"🎉 *Task Completed!*\n\n"
-        f"• Successful: *{success_count}/{total}*\n"
+        f"🎉 *Queue Completed!*\n\n"
+        f"• Videos processed: *{total_urls}*\n"
         f"• Action: `{action_type.upper()}`\n\n"
-        f"Ready for your next link!"
+        f"Ready for your next link(s)!"
     )
     await context.bot.send_message(chat_id=chat_id, text=done_msg, reply_markup=build_main_menu(), parse_mode="Markdown")
 

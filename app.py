@@ -145,6 +145,37 @@ def save_settings(settings):
         json.dump(settings, f, indent=2)
 
 
+def prompt_for_urls():
+    """Prompts user to paste one or multiple TikTok links, running top to bottom."""
+    print(f"{YELLOW}Paste TikTok Video Link(s):{RESET}")
+    print(f"{CYAN}💡 You can paste a single link, OR paste multiple links (one per line).{RESET}")
+    print(f"{CYAN}   When pasting multiple links, type 'DONE' or press Enter on an empty line when finished:{RESET}\n")
+
+    urls = []
+    first_input = input("Link 1: ").strip()
+    if not first_input:
+        return []
+
+    # If user pasted multiple links in a single block or single line
+    for piece in first_input.split():
+        if "tiktok.com" in piece:
+            urls.append(piece)
+
+    # Allow continuous multiline paste
+    while True:
+        try:
+            line = input().strip()
+        except EOFError:
+            break
+        if not line or line.upper() == "DONE":
+            break
+        for piece in line.split():
+            if "tiktok.com" in piece and piece not in urls:
+                urls.append(piece)
+
+    return urls
+
+
 # -------------------------------------------------------------
 # Feature 1: Run Post Engagement
 # -------------------------------------------------------------
@@ -159,11 +190,15 @@ def run_engagement_menu():
         input("\nPress ENTER to continue...")
         return
 
-    post_url = input(f"{YELLOW}Enter TikTok Post URL:{RESET} ").strip()
-    if not post_url:
-        print(f"{RED}[!] URL cannot be empty.{RESET}")
+    urls = prompt_for_urls()
+    if not urls:
+        print(f"{RED}[!] No valid TikTok links provided.{RESET}")
         input("\nPress ENTER to continue...")
         return
+
+    print(f"\n{GREEN}[+] Loaded {len(urls)} target video(s) into queue:{RESET}")
+    for idx, u in enumerate(urls, 1):
+        print(f"  {idx}. {u}")
 
     # Account selection
     print(f"\n{BOLD}Select accounts to run:{RESET}")
@@ -220,49 +255,57 @@ def run_engagement_menu():
 
     # Execution summary
     print(f"\n{CYAN}========================================================")
-    print(f"  Target URL: {post_url}")
-    print(f"  Accounts: {len(target_accounts)}")
+    print(f"  Target Videos in Queue: {len(urls)}")
+    print(f"  Accounts per Video: {len(target_accounts)}")
     print(f"  Actions: Like={do_like}, Follow={do_follow}, Comment={do_comment}, Share={do_share}, Save={do_save}, Repost={do_repost}")
     print(f"  Delays: {settings['delay_min']}s - {settings['delay_max']}s")
     print(f"========================================================{RESET}\n")
 
-    confirm = input("Start engagement now? (Y/n): ").strip().lower()
+    confirm = input("Start engagement queue now? (Y/n): ").strip().lower()
     if confirm == "n":
         return
 
     # Import and run engine
     from tiktok_auto import engage_post
 
-    # Randomize the execution order of selected accounts
-    exec_accounts = list(target_accounts)
-    random.shuffle(exec_accounts)
-    print(f"{CYAN}[🎲] Randomized account order: {', '.join([a['id'] for a in exec_accounts])}{RESET}")
-
     async def execute_all():
-        for i, acc in enumerate(exec_accounts):
-            comment_text = comment_choice
-            if comment_choice == "random":
-                comment_text = random.choice(load_comments())
+        for u_idx, post_url in enumerate(urls, 1):
+            print(f"\n{MAGENTA}{BOLD}========================================================")
+            print(f"  ▶️ Processing Video [{u_idx}/{len(urls)}]: {post_url}")
+            print(f"========================================================{RESET}")
 
-            print(f"\n{BOLD}[{i+1}/{len(exec_accounts)}] Running {acc['id']}...{RESET}")
-            await engage_post(
-                account=acc,
-                post_url=post_url,
-                do_like=do_like,
-                do_follow=do_follow,
-                comment_text=comment_text if do_comment else None,
-                do_share=do_share,
-                do_save=do_save,
-                do_repost=do_repost
-            )
+            # Randomize order of accounts for each video
+            exec_accounts = list(target_accounts)
+            random.shuffle(exec_accounts)
+            print(f"{CYAN}[🎲] Account order: {', '.join([a['id'] for a in exec_accounts])}{RESET}")
 
+            for i, acc in enumerate(exec_accounts):
+                comment_text = comment_choice
+                if comment_choice == "random":
+                    comment_text = random.choice(load_comments())
 
-            if i < len(target_accounts) - 1:
-                cooldown = random.uniform(settings["delay_min"], settings["delay_max"])
-                print(f"{YELLOW}[⏳] Cooling down for {cooldown:.1f}s before next account...{RESET}")
-                await asyncio.sleep(cooldown)
+                print(f"\n{BOLD}[Video {u_idx}/{len(urls)} | Account {i+1}/{len(exec_accounts)}] Running {acc['id']}...{RESET}")
+                await engage_post(
+                    account=acc,
+                    post_url=post_url,
+                    do_like=do_like,
+                    do_follow=do_follow,
+                    comment_text=comment_text if do_comment else None,
+                    do_share=do_share,
+                    do_save=do_save,
+                    do_repost=do_repost
+                )
 
-        print(f"\n{GREEN}{BOLD}[🎉] All accounts finished engagement!{RESET}")
+                if i < len(exec_accounts) - 1:
+                    cooldown = random.uniform(settings["delay_min"], settings["delay_max"])
+                    print(f"{YELLOW}[⏳] Cooling down for {cooldown:.1f}s before next account...{RESET}")
+                    await asyncio.sleep(cooldown)
+
+            if u_idx < len(urls):
+                print(f"\n{CYAN}[⏸️] Completed video {u_idx}. Waiting 5s before starting next video in queue...{RESET}")
+                await asyncio.sleep(5.0)
+
+        print(f"\n{GREEN}{BOLD}[🎉] All {len(urls)} videos completed across all selected accounts!{RESET}")
 
     asyncio.run(execute_all())
     input("\nPress ENTER to return to menu...")
@@ -289,11 +332,15 @@ def run_single_action_flow(action_type):
         input("\nPress ENTER to continue...")
         return
 
-    post_url = input(f"{YELLOW}Enter TikTok Post URL:{RESET} ").strip()
-    if not post_url:
-        print(f"{RED}[!] URL cannot be empty.{RESET}")
+    urls = prompt_for_urls()
+    if not urls:
+        print(f"{RED}[!] No valid TikTok links provided.{RESET}")
         input("\nPress ENTER to continue...")
         return
+
+    print(f"\n{GREEN}[+] Loaded {len(urls)} target video(s) into queue:{RESET}")
+    for idx, u in enumerate(urls, 1):
+        print(f"  {idx}. {u}")
 
     # Account selection
     print(f"\n{BOLD}Select accounts to run:{RESET}")
@@ -333,12 +380,11 @@ def run_single_action_flow(action_type):
         else:
             comment_choice = "random"
 
-
     settings = load_settings()
     print(f"\n{CYAN}========================================================")
-    print(f"  Target URL: {post_url}")
+    print(f"  Target Videos in Queue: {len(urls)}")
     print(f"  Action: {action_titles.get(action_type)}")
-    print(f"  Accounts: {len(target_accounts)}")
+    print(f"  Accounts per Video: {len(target_accounts)}")
     print(f"  Delays: {settings['delay_min']}s - {settings['delay_max']}s")
     print(f"========================================================{RESET}\n")
 
@@ -348,36 +394,44 @@ def run_single_action_flow(action_type):
 
     from tiktok_auto import engage_post
 
-    # Randomize the execution order of selected accounts
-    exec_accounts = list(target_accounts)
-    random.shuffle(exec_accounts)
-    print(f"{CYAN}[🎲] Randomized account order: {', '.join([a['id'] for a in exec_accounts])}{RESET}")
-
     async def execute():
-        for i, acc in enumerate(exec_accounts):
-            c_text = None
-            if action_type == "comment":
-                c_text = random.choice(load_comments()) if comment_choice == "random" else comment_choice
+        for u_idx, post_url in enumerate(urls, 1):
+            print(f"\n{MAGENTA}{BOLD}========================================================")
+            print(f"  ▶️ Processing Video [{u_idx}/{len(urls)}]: {post_url}")
+            print(f"========================================================{RESET}")
 
-            print(f"\n{BOLD}[{i+1}/{len(exec_accounts)}] Running {acc['id']} ({action_type})...{RESET}")
-            await engage_post(
-                account=acc,
-                post_url=post_url,
-                do_like=(action_type == "like"),
-                do_follow=(action_type == "follow"),
-                comment_text=c_text,
-                do_share=(action_type == "share"),
-                do_save=(action_type == "save"),
-                do_repost=(action_type == "repost")
-            )
+            # Randomize order of accounts for each video
+            exec_accounts = list(target_accounts)
+            random.shuffle(exec_accounts)
+            print(f"{CYAN}[🎲] Account order: {', '.join([a['id'] for a in exec_accounts])}{RESET}")
 
+            for i, acc in enumerate(exec_accounts):
+                c_text = None
+                if action_type == "comment":
+                    c_text = random.choice(load_comments()) if comment_choice == "random" else comment_choice
 
-            if i < len(target_accounts) - 1:
-                cooldown = random.uniform(settings["delay_min"], settings["delay_max"])
-                print(f"{YELLOW}[⏳] Cooling down for {cooldown:.1f}s before next account...{RESET}")
-                await asyncio.sleep(cooldown)
+                print(f"\n{BOLD}[Video {u_idx}/{len(urls)} | Account {i+1}/{len(exec_accounts)}] Running {acc['id']} ({action_type})...{RESET}")
+                await engage_post(
+                    account=acc,
+                    post_url=post_url,
+                    do_like=(action_type == "like"),
+                    do_follow=(action_type == "follow"),
+                    comment_text=c_text,
+                    do_share=(action_type == "share"),
+                    do_save=(action_type == "save"),
+                    do_repost=(action_type == "repost")
+                )
 
-        print(f"\n{GREEN}{BOLD}[🎉] Task finished for all selected accounts!{RESET}")
+                if i < len(exec_accounts) - 1:
+                    cooldown = random.uniform(settings["delay_min"], settings["delay_max"])
+                    print(f"{YELLOW}[⏳] Cooling down for {cooldown:.1f}s before next account...{RESET}")
+                    await asyncio.sleep(cooldown)
+
+            if u_idx < len(urls):
+                print(f"\n{CYAN}[⏸️] Completed video {u_idx}. Waiting 5s before next video in queue...{RESET}")
+                await asyncio.sleep(5.0)
+
+        print(f"\n{GREEN}{BOLD}[🎉] Task finished for all {len(urls)} videos across selected accounts!{RESET}")
 
     asyncio.run(execute())
     input("\nPress ENTER to return to menu...")
