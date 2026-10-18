@@ -35,6 +35,20 @@ DEFAULT_USER_AGENT = (
     "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
 )
 
+def get_chrome_path():
+    """Finds Google Chrome executable across standard, 32-bit, and user-level installations."""
+    candidates = [
+        r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+        r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+        os.path.expandvars(r"%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe"),
+        os.path.expandvars(r"%PROGRAMFILES%\Google\Chrome\Application\chrome.exe"),
+        os.path.expandvars(r"%PROGRAMFILES(X86)%\Google\Chrome\Application\chrome.exe")
+    ]
+    for p in candidates:
+        if p and os.path.exists(p):
+            return p
+    return r"C:\Program Files\Google\Chrome\Application\chrome.exe"
+
 def load_proxies():
     """Reads proxies.txt and returns a cleaned list of proxy strings."""
     if not PROXIES_FILE.exists():
@@ -112,8 +126,9 @@ async def warmup_account(account, minutes=3):
         return False
 
     import subprocess
-    chrome_exe = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
+    chrome_exe = get_chrome_path()
     if not os.path.exists(chrome_exe):
+        print(f"[!] Google Chrome executable not found on system. Please ensure Chrome is installed.")
         return False
 
     subprocess.run(["taskkill", "/F", "/IM", "chrome.exe"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -236,7 +251,7 @@ async def setup_login_session(account_id):
     print("[*] When you are fully logged in, press ENTER in this terminal to save session.\n")
 
     import subprocess
-    chrome_exe = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
+    chrome_exe = get_chrome_path()
     if not os.path.exists(chrome_exe):
         print(f"[!] Chrome executable not found at: {chrome_exe}")
         return
@@ -332,9 +347,9 @@ async def engage_post(account, post_url, do_like=True, do_follow=False, comment_
     print(f"\n[{account_id}] Starting engagement...")
 
     import subprocess
-    chrome_exe = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
+    chrome_exe = get_chrome_path()
     if not os.path.exists(chrome_exe):
-        print(f"[!] Chrome executable not found at: {chrome_exe}")
+        print(f"[!] Google Chrome executable not found at: {chrome_exe}")
         return False
 
     # Kill old Chrome instance so new account profile loads cleanly
@@ -456,7 +471,7 @@ async def engage_via_live_chrome(post_url, do_like=True, do_follow=False, commen
     # If Chrome is not running with port 9222, launch it with the acc_1 profile
     if not chrome_running:
         print(f"[*] Starting Chrome using your saved '{account_id}' session...")
-        chrome_exe = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
+        chrome_exe = get_chrome_path()
         if not os.path.exists(chrome_exe):
             print(f"[!] Chrome executable not found at: {chrome_exe}")
             return False

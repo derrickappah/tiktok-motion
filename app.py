@@ -775,7 +775,7 @@ def run_telegram_bot_flow():
     import subprocess
     cmd = [
         "cmd.exe", "/c", "start", "TikTok Motion Telegram Bot",
-        r"C:\Users\DELL\AppData\Local\Programs\Python\Python312\python.exe",
+        sys.executable,
         "telegram_bot.py"
     ]
     subprocess.Popen(cmd)
