@@ -985,9 +985,13 @@ async def main():
         print("[!] No matching accounts found to run.")
         return
 
+    # Randomize execution order of accounts
+    random.shuffle(selected_accounts)
+
     print(f"\n========================================================")
     print(f"  Target Post: {args.url}")
     print(f"  Accounts to run: {len(selected_accounts)}")
+    print(f"  Account Order: {', '.join([a['id'] for a in selected_accounts])}")
     print(f"  Actions: Like={args.like}, Follow={args.follow}, Comment={'Yes' if args.comment else 'No'}, Share={args.share}, Save={args.save}, Repost={args.repost}")
     print(f"  Delay between accounts: {args.delay_min}s - {args.delay_max}s")
     print(f"========================================================\n")

@@ -293,6 +293,9 @@ async def run_engagement_pipeline(chat_id: int, context: ContextTypes.DEFAULT_TY
     do_repost = action_type in ["repost", "all"]
     comment_text = "ai" if action_type in ["comment", "all"] else None
 
+    # Randomize execution order of active accounts
+    random.shuffle(active_accounts)
+
     success_count = 0
     total = len(active_accounts)
 
@@ -332,6 +335,9 @@ async def run_warmup_pipeline(chat_id: int, context: ContextTypes.DEFAULT_TYPE, 
     if not active_accounts:
         await context.bot.send_message(chat_id=chat_id, text="❌ No logged-in accounts found.", parse_mode="Markdown")
         return
+
+    # Randomize warmup order across accounts
+    random.shuffle(active_accounts)
 
     total = len(active_accounts)
     for i, acc in enumerate(active_accounts):

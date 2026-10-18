@@ -233,13 +233,18 @@ def run_engagement_menu():
     # Import and run engine
     from tiktok_auto import engage_post
 
+    # Randomize the execution order of selected accounts
+    exec_accounts = list(target_accounts)
+    random.shuffle(exec_accounts)
+    print(f"{CYAN}[🎲] Randomized account order: {', '.join([a['id'] for a in exec_accounts])}{RESET}")
+
     async def execute_all():
-        for i, acc in enumerate(target_accounts):
+        for i, acc in enumerate(exec_accounts):
             comment_text = comment_choice
             if comment_choice == "random":
                 comment_text = random.choice(load_comments())
 
-            print(f"\n{BOLD}[{i+1}/{len(target_accounts)}] Running {acc['id']}...{RESET}")
+            print(f"\n{BOLD}[{i+1}/{len(exec_accounts)}] Running {acc['id']}...{RESET}")
             await engage_post(
                 account=acc,
                 post_url=post_url,
@@ -343,13 +348,18 @@ def run_single_action_flow(action_type):
 
     from tiktok_auto import engage_post
 
+    # Randomize the execution order of selected accounts
+    exec_accounts = list(target_accounts)
+    random.shuffle(exec_accounts)
+    print(f"{CYAN}[🎲] Randomized account order: {', '.join([a['id'] for a in exec_accounts])}{RESET}")
+
     async def execute():
-        for i, acc in enumerate(target_accounts):
+        for i, acc in enumerate(exec_accounts):
             c_text = None
             if action_type == "comment":
                 c_text = random.choice(load_comments()) if comment_choice == "random" else comment_choice
 
-            print(f"\n{BOLD}[{i+1}/{len(target_accounts)}] Running {acc['id']} ({action_type})...{RESET}")
+            print(f"\n{BOLD}[{i+1}/{len(exec_accounts)}] Running {acc['id']} ({action_type})...{RESET}")
             await engage_post(
                 account=acc,
                 post_url=post_url,
@@ -745,11 +755,16 @@ def run_warmup_flow():
 
     from tiktok_auto import warmup_account
 
+    # Randomize order of accounts for warmup
+    exec_target = list(target)
+    random.shuffle(exec_target)
+    print(f"{CYAN}[🎲] Randomized warmup order: {', '.join([a['id'] for a in exec_target])}{RESET}")
+
     async def execute():
-        for i, acc in enumerate(target):
-            print(f"\n{BOLD}[{i+1}/{len(target)}] Warming up {acc['id']} for {minutes:.1f} mins...{RESET}")
+        for i, acc in enumerate(exec_target):
+            print(f"\n{BOLD}[{i+1}/{len(exec_target)}] Warming up {acc['id']} for {minutes:.1f} mins...{RESET}")
             await warmup_account(acc, minutes=minutes)
-            if i < len(target) - 1:
+            if i < len(exec_target) - 1:
                 await asyncio.sleep(random.uniform(5, 10))
         print(f"\n{GREEN}{BOLD}[🎉] All accounts successfully warmed up!{RESET}")
 
