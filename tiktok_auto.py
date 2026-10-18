@@ -582,14 +582,16 @@ async def try_share(page, account_id):
             print(f"[{account_id}] 🔄 Clicked share button.")
             await asyncio.sleep(random.uniform(1.2, 2.0))
 
-            # Multi-strategy search for 'Copy link' button/text
+            # Multi-strategy search for 'Copy' or 'Copy link' button/text
             copy_locators = [
+                page.locator('[data-e2e="share-copy"]').first,
+                page.locator('div:has-text("Copy"):not(:has-text("Copy link"))').last,
+                page.locator('p:has-text("Copy")').first,
+                page.get_by_text("Copy", exact=True).first,
                 page.get_by_text("Copy link", exact=False).first,
-                page.locator("xpath=//*[contains(translate(text(), 'COPY LINK', 'copy link'), 'copy link')]").first,
                 page.locator('[data-e2e="share-copy-link"]').first,
-                page.locator('[aria-label*="Copy link" i]').first,
-                page.locator('div:has-text("Copy link")').last,
-                page.locator('button:has-text("Copy link")').first
+                page.locator('[aria-label*="Copy" i]').first,
+                page.locator("xpath=//*[translate(normalize-space(text()), 'COPY', 'copy') = 'copy']").first
             ]
 
             copied = False
@@ -598,42 +600,41 @@ async def try_share(page, account_id):
                     if await loc.is_visible(timeout=1000):
                         await loc.scroll_into_view_if_needed()
                         await loc.click(force=True)
-                        print(f"[{account_id}] 📋 Copied link via UI click! (Share action recorded)")
+                        print(f"[{account_id}] 📋 Clicked Copy button! (Share action recorded)")
                         copied = True
                         break
                 except Exception:
                     pass
 
             if not copied:
-                # Fallback: JavaScript DOM evaluation to find and click any element with 'Copy link'
+                # Direct JavaScript DOM click on [data-e2e="share-copy"] or element with exact text 'Copy'
                 clicked_js = await page.evaluate('''() => {
-                    const all = document.querySelectorAll('*');
-                    for (let el of all) {
-                        if (el.children.length === 0 && el.textContent && el.textContent.trim().toLowerCase() === 'copy link') {
-                            el.click();
-                            if (el.parentElement) el.parentElement.click();
-                            return true;
-                        }
+                    const el = document.querySelector('[data-e2e="share-copy"]') || document.querySelector('[data-e2e="share-copy-link"]');
+                    if (el) {
+                        el.click();
+                        const child = el.querySelector('div, p');
+                        if (child) child.click();
+                        return true;
                     }
-                    for (let el of all) {
-                        if (el.innerText && el.innerText.trim().toLowerCase().includes('copy link')) {
-                            el.click();
+                    const all = document.querySelectorAll('*');
+                    for (let item of all) {
+                        if (item.children.length === 0 && item.textContent && item.textContent.trim().toLowerCase() === 'copy') {
+                            item.click();
+                            if (item.parentElement) item.parentElement.click();
                             return true;
                         }
                     }
                     return false;
                 }''')
                 if clicked_js:
-                    print(f"[{account_id}] 📋 Copied link via DOM trigger! (Share action recorded)")
+                    print(f"[{account_id}] 📋 Clicked Copy button via DOM trigger! (Share action recorded)")
                     copied = True
 
             if not copied:
-                # If still not clicked, close flyout gracefully
-                print(f"[{account_id}] ⚠️ Share menu opened, but 'Copy link' button was not clicked.")
+                print(f"[{account_id}] ⚠️ Share menu opened, but 'Copy' button was not clicked.")
                 await page.keyboard.press("Escape")
             else:
                 await asyncio.sleep(random.uniform(1.0, 2.0))
-                # Press Escape to dismiss any residual popup
                 await page.keyboard.press("Escape")
             return
 
