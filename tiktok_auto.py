@@ -441,6 +441,9 @@ async def engage_post(account, post_url, do_like=True, do_follow=False, comment_
             if do_repost:
                 await try_repost(page, account_id)
 
+            # Crucial: Allow network requests (Follow, Comment, Share, Repost) to flush to TikTok servers before closing
+            await asyncio.sleep(random.uniform(3.0, 5.0))
+
             print(f"[{account_id}] ✅ Completed actions successfully.")
             return True
 
@@ -450,6 +453,8 @@ async def engage_post(account, post_url, do_like=True, do_follow=False, comment_
             print(f"[{account_id}] ❌ Error during engagement: {e}")
             return False
         finally:
+            # Settle and flush storage/cookies cleanly
+            await asyncio.sleep(1.0)
             await context.close()
 
 
