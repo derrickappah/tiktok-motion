@@ -19,6 +19,7 @@ BASE_DIR = Path(__file__).resolve().parent
 ACCOUNTS_FILE = BASE_DIR / "accounts.json"
 COMMENTS_FILE = BASE_DIR / "comments.txt"
 SETTINGS_FILE = BASE_DIR / "settings.json"
+PROXIES_FILE = BASE_DIR / "proxies.txt"
 PROFILES_DIR = BASE_DIR / "profiles"
 
 # Colors for terminal styling (ANSI)
@@ -87,6 +88,19 @@ def save_comments(comments):
     with open(COMMENTS_FILE, "w", encoding="utf-8") as f:
         for c in comments:
             f.write(c.strip() + "\n")
+
+
+def load_proxies():
+    if not PROXIES_FILE.exists():
+        return []
+    with open(PROXIES_FILE, "r", encoding="utf-8") as f:
+        return [line.strip() for line in f if line.strip() and not line.startswith("#")]
+
+
+def save_proxies(proxies):
+    with open(PROXIES_FILE, "w", encoding="utf-8") as f:
+        for p in proxies:
+            f.write(p.strip() + "\n")
 
 
 def load_settings():
@@ -497,6 +511,120 @@ def comment_library_menu():
 
 
 # -------------------------------------------------------------
+# Proxy Pool Manager
+# -------------------------------------------------------------
+
+def proxy_manager_menu():
+    while True:
+        print_banner()
+        print(f"{BOLD}[🌐 PROXY POOL MANAGER]{RESET}\n")
+
+        proxies = load_proxies()
+        print(f"Total Proxies in Pool: {CYAN}{len(proxies)}{RESET}")
+        if proxies:
+            print(f"Sample Proxies (First 5):")
+            for p in proxies[:5]:
+                print(f"  • {p}")
+            if len(proxies) > 5:
+                print(f"  ...and {len(proxies) - 5} more.")
+        else:
+            print(f"{YELLOW}⚠️ No proxies loaded. Accounts will use direct local connection.{RESET}")
+
+        print(f"\n{BOLD}Actions:{RESET}")
+        print("  [1] 📋 Paste / Add Proxy List (Append to Pool)")
+        print("  [2] 🔄 Replace Entire Proxy Pool (Paste New List)")
+        print("  [3] 📂 Import Proxies from Custom File Path")
+        print("  [4] 👁️  View All Proxies")
+        print("  [5] 🗑️  Clear All Proxies")
+        print("  [0] 🔙 Back to Main Menu")
+
+        choice = input(f"\n{YELLOW}Select an option [0-5]:{RESET} ").strip()
+
+        if choice == "1":
+            print(f"\n{CYAN}Paste your proxies below (one per line, e.g. IP:PORT).{RESET}")
+            print(f"{YELLOW}Type 'DONE' or press Enter on an empty line when finished:{RESET}\n")
+            new_list = []
+            while True:
+                try:
+                    line = input().strip()
+                except EOFError:
+                    break
+                if not line or line.upper() == "DONE":
+                    break
+                if ":" in line and not line.startswith("#"):
+                    new_list.append(line)
+            if new_list:
+                current_proxies = load_proxies()
+                current_proxies.extend(new_list)
+                # Deduplicate while preserving order
+                unique_proxies = list(dict.fromkeys(current_proxies))
+                save_proxies(unique_proxies)
+                print(f"\n{GREEN}[+] Added {len(new_list)} proxies! Total in pool: {len(unique_proxies)}{RESET}")
+            else:
+                print(f"\n{YELLOW}[!] No proxies entered.{RESET}")
+            time.sleep(1.5)
+
+        elif choice == "2":
+            print(f"\n{CYAN}Paste your new proxy list below to REPLACE the current pool.{RESET}")
+            print(f"{YELLOW}Type 'DONE' or press Enter on an empty line when finished:{RESET}\n")
+            new_list = []
+            while True:
+                try:
+                    line = input().strip()
+                except EOFError:
+                    break
+                if not line or line.upper() == "DONE":
+                    break
+                if ":" in line and not line.startswith("#"):
+                    new_list.append(line)
+            if new_list:
+                unique_proxies = list(dict.fromkeys(new_list))
+                save_proxies(unique_proxies)
+                print(f"\n{GREEN}[+] Replaced proxy pool with {len(unique_proxies)} proxies!{RESET}")
+            else:
+                print(f"\n{YELLOW}[!] Cancelled. No proxies entered.{RESET}")
+            time.sleep(1.5)
+
+        elif choice == "3":
+            file_path = input("\nEnter path to proxy .txt file: ").strip().strip('"')
+            p_path = Path(file_path)
+            if p_path.exists() and p_path.is_file():
+                try:
+                    with open(p_path, "r", encoding="utf-8") as f:
+                        lines = [l.strip() for l in f if l.strip() and ":" in l and not l.startswith("#")]
+                    if lines:
+                        current_proxies = load_proxies()
+                        current_proxies.extend(lines)
+                        unique_proxies = list(dict.fromkeys(current_proxies))
+                        save_proxies(unique_proxies)
+                        print(f"\n{GREEN}[+] Imported {len(lines)} proxies from file! Total pool: {len(unique_proxies)}{RESET}")
+                    else:
+                        print(f"\n{YELLOW}[!] No valid proxies found in file.{RESET}")
+                except Exception as e:
+                    print(f"\n{RED}[!] Error reading file: {e}{RESET}")
+            else:
+                print(f"\n{RED}[!] File not found: {file_path}{RESET}")
+            time.sleep(1.5)
+
+        elif choice == "4":
+            print_banner()
+            print(f"{BOLD}[👁️ ALL REGISTERED PROXIES ({len(proxies)})]{RESET}\n")
+            for i, p in enumerate(proxies, 1):
+                print(f"  [{i:3d}] {p}")
+            input(f"\n{CYAN}Press ENTER to return...{RESET}")
+
+        elif choice == "5":
+            confirm = input(f"\n{RED}Are you sure you want to delete all proxies? (y/N): {RESET}").strip().lower()
+            if confirm == "y":
+                save_proxies([])
+                print(f"{GREEN}[+] Proxy pool cleared!{RESET}")
+                time.sleep(1.2)
+
+        elif choice == "0":
+            break
+
+
+# -------------------------------------------------------------
 # Feature 5: Speed & Delay Settings
 # -------------------------------------------------------------
 
@@ -647,8 +775,9 @@ def main():
         print_banner()
         accounts = load_accounts()
         ready_count = sum(1 for a in accounts if (PROFILES_DIR / a['id']).exists())
+        proxies = load_proxies()
 
-        print(f"  Accounts Loaded: {CYAN}{len(accounts)}{RESET} | Logged In: {GREEN}{ready_count}{RESET} | Pending: {YELLOW}{len(accounts) - ready_count}{RESET}\n")
+        print(f"  Accounts: {CYAN}{len(accounts)}{RESET} (Logged In: {GREEN}{ready_count}{RESET}) | Proxies in Pool: {MAGENTA}{len(proxies)}{RESET}\n")
         print(f"  {BOLD}--- ACTIONS ON POST ---{RESET}")
         print(f"  {BOLD}[1]{RESET} ❤️  Like Post Only")
         print(f"  {BOLD}[2]{RESET} 💬 Comment on Post Only (Presets or AI)")
@@ -664,9 +793,10 @@ def main():
         print(f"  {BOLD}[10]{RESET} 🔑 Log Into an Account (Real Chrome)")
         print(f"  {BOLD}[11]{RESET} 💬 Comment Templates Library")
         print(f"  {BOLD}[12]{RESET} ⚙️ Settings (Delays, AI Keys, Telegram)")
+        print(f"  {BOLD}[13]{RESET} 🌐 Proxy Pool Manager ({len(proxies)} loaded)")
         print(f"  {BOLD}[0]{RESET} 🚪 Exit\n")
 
-        choice = input(f"{YELLOW}Select an option [0-12]:{RESET} ").strip()
+        choice = input(f"{YELLOW}Select an option [0-13]:{RESET} ").strip()
 
         if choice == "1":
             run_single_action_flow("like")
@@ -692,6 +822,8 @@ def main():
             comment_library_menu()
         elif choice == "12":
             settings_menu()
+        elif choice == "13":
+            proxy_manager_menu()
         elif choice == "0":
             print(f"\n{CYAN}Thanks for using TikTok Motion by Dee! Goodbye.{RESET}\n")
             sys.exit(0)

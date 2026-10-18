@@ -28,11 +28,26 @@ stealth_handler = Stealth()
 BASE_DIR = Path(__file__).resolve().parent
 PROFILES_DIR = BASE_DIR / "profiles"
 ACCOUNTS_FILE = BASE_DIR / "accounts.json"
+PROXIES_FILE = BASE_DIR / "proxies.txt"
 
 DEFAULT_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
 )
+
+def load_proxies():
+    """Reads proxies.txt and returns a cleaned list of proxy strings."""
+    if not PROXIES_FILE.exists():
+        return []
+    with open(PROXIES_FILE, "r", encoding="utf-8") as f:
+        proxies = [line.strip() for line in f if line.strip() and not line.startswith("#")]
+    return proxies
+
+def get_random_proxy():
+    """Selects a random proxy from proxies.txt if available."""
+    pool = load_proxies()
+    return random.choice(pool) if pool else None
+
 
 
 # Realistic fallback comment options when randomized comments are enabled
@@ -104,14 +119,22 @@ async def warmup_account(account, minutes=3):
     subprocess.run(["taskkill", "/F", "/IM", "chrome.exe"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     await asyncio.sleep(1.0)
 
+    proxy_str = account.get("proxy") or get_random_proxy()
+    proxy_flag = []
+    if proxy_str:
+        clean_px = proxy_str.replace("http://", "").replace("https://", "").strip()
+        print(f"[{account_id}] 🌐 Using Proxy: {clean_px}")
+        proxy_flag = [f"--proxy-server={clean_px}"]
+
     cmd = [
         chrome_exe,
         f"--remote-debugging-port=9222",
         f"--user-data-dir={profile_path.resolve()}",
         "--start-maximized"
-    ]
+    ] + proxy_flag
     subprocess.Popen(cmd)
     await asyncio.sleep(3.0)
+
 
     print(f"\n[{account_id}] 🧘 Starting Warm-up / FYP Surfing session (~{minutes} mins)...")
 
@@ -264,8 +287,13 @@ async def engage_post(account, post_url, do_like=True, do_follow=False, comment_
         print(f"[-] Profile for '{account_id}' does not exist yet. Run '--login {account_id}' first.")
         return False
 
-    proxy_cfg = parse_proxy(account.get("proxy"))
-    user_agent = account.get("custom_user_agent") or DEFAULT_USER_AGENT
+    # Check proxy: dedicated account proxy, or random pick from proxies.txt pool
+    proxy_str = account.get("proxy") or get_random_proxy()
+    proxy_flag = []
+    if proxy_str:
+        clean_px = proxy_str.replace("http://", "").replace("https://", "").strip()
+        print(f"[{account_id}] 🌐 Using Proxy: {clean_px}")
+        proxy_flag = [f"--proxy-server={clean_px}"]
 
     print(f"\n[{account_id}] Starting engagement...")
 
@@ -279,15 +307,16 @@ async def engage_post(account, post_url, do_like=True, do_follow=False, comment_
     subprocess.run(["taskkill", "/F", "/IM", "chrome.exe"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     await asyncio.sleep(1.0)
 
-    # Launch real Google Chrome on port 9222 with this specific account profile
+    # Launch real Google Chrome on port 9222 with this specific account profile and proxy
     cmd = [
         chrome_exe,
         f"--remote-debugging-port=9222",
         f"--user-data-dir={profile_path.resolve()}",
         "--start-maximized"
-    ]
+    ] + proxy_flag
     subprocess.Popen(cmd)
     await asyncio.sleep(3.0)
+
 
     async with async_playwright() as p:
         try:

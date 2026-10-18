@@ -23,6 +23,7 @@ BASE_DIR = Path(__file__).resolve().parent
 SETTINGS_FILE = BASE_DIR / "settings.json"
 ACCOUNTS_FILE = BASE_DIR / "accounts.json"
 COMMENTS_FILE = BASE_DIR / "comments.txt"
+PROXIES_FILE = BASE_DIR / "proxies.txt"
 PROFILES_DIR = BASE_DIR / "profiles"
 
 # Temporary memory store for user state: {chat_id: {"state": ..., "data": ...}}
@@ -67,7 +68,10 @@ def build_main_menu():
             InlineKeyboardButton("📊 Accounts Health", callback_data="cmd_status"),
         ],
         [
-            InlineKeyboardButton("💬 Comment Library", callback_data="cmd_comments"),
+            InlineKeyboardButton("🌐 Proxy Pool", callback_data="cmd_proxies"),
+            InlineKeyboardButton("💬 Comments", callback_data="cmd_comments"),
+        ],
+        [
             InlineKeyboardButton("⚙️ Settings / Delays", callback_data="cmd_settings"),
         ]
     ]
@@ -171,6 +175,30 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if len(comments) > 8:
             msg += f"_...and {len(comments) - 8} more._\n"
         msg += "\n💡 You can edit or add more templates in the desktop menu or `comments.txt`."
+
+        kb = [[InlineKeyboardButton("🔙 Main Menu", callback_data="menu_home")]]
+        await query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+
+    elif data == "cmd_proxies":
+        proxies = []
+        if PROXIES_FILE.exists():
+            with open(PROXIES_FILE, "r", encoding="utf-8") as f:
+                proxies = [line.strip() for line in f if line.strip() and not line.startswith("#")]
+        msg = (
+            f"🌐 *Proxy Pool Status:*\n\n"
+            f"• Total Loaded: *{len(proxies)}*\n"
+            f"• Mode: *Random Proxy per Account/Action*\n\n"
+        )
+        if proxies:
+            msg += "*Sample Proxies:*\n"
+            for i, p in enumerate(proxies[:6], 1):
+                msg += f"`{i}.` `{p}`\n"
+            if len(proxies) > 6:
+                msg += f"_...and {len(proxies) - 6} more._\n"
+        else:
+            msg += "⚠️ _No proxies loaded. Direct local connection is used._\n"
+
+        msg += "\n💡 _Tip: You can paste or import new proxy lists anytime in the Motion terminal [13]._ "
 
         kb = [[InlineKeyboardButton("🔙 Main Menu", callback_data="menu_home")]]
         await query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
