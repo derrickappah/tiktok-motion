@@ -346,8 +346,10 @@ def main():
     config = get_config()
     token = config.get("telegram_bot_token")
     if not token:
-        print("[!] Telegram Bot Token not set.")
-        print("Please set your bot token in Settings via motion.bat or in settings.json.")
+        print("\n[!] Telegram Bot Token not set.")
+        print("Please set your bot token in Settings via motion.bat (option [12]) or in settings.json.")
+        print("\nNote: settings.json is not synced to GitHub for security, so each new device needs the token set once.")
+        input("\nPress ENTER to exit...")
         return
 
     print("========================================================")
@@ -355,12 +357,16 @@ def main():
     print("  Open Telegram on your phone and tap Start!")
     print("========================================================")
 
-    app = ApplicationBuilder().token(token).build()
-    app.add_handler(CommandHandler("start", start_cmd))
-    app.add_handler(CommandHandler("menu", start_cmd))
-    app.add_handler(CallbackQueryHandler(button_callback))
-    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
-    app.run_polling()
+    try:
+        app = ApplicationBuilder().token(token).build()
+        app.add_handler(CommandHandler("start", start_cmd))
+        app.add_handler(CommandHandler("menu", start_cmd))
+        app.add_handler(CallbackQueryHandler(button_callback))
+        app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
+        app.run_polling()
+    except Exception as e:
+        print(f"\n[❌] Telegram Bot crashed: {e}")
+        input("\nPress ENTER to exit...")
 
 
 if __name__ == "__main__":
