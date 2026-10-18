@@ -326,7 +326,7 @@ async def human_scroll(page):
         pass
 
 
-async def engage_post(account, post_url, do_like=True, do_follow=False, comment_text=None, do_share=False, do_save=False, min_watch=8, max_watch=15):
+async def engage_post(account, post_url, do_like=True, do_follow=False, comment_text=None, do_share=False, do_save=False, do_repost=False, min_watch=8, max_watch=15):
 
 
     account_id = account["id"]
@@ -436,6 +436,10 @@ async def engage_post(account, post_url, do_like=True, do_follow=False, comment_
             # 5. SAVE / FAVORITE
             if do_save:
                 await try_save(page, account_id)
+
+            # 6. REPOST
+            if do_repost:
+                await try_repost(page, account_id)
 
             print(f"[{account_id}] ✅ Completed actions successfully.")
             return True
@@ -723,6 +727,97 @@ async def try_save(page, account_id):
     print(f"[{account_id}] ⚠️ Save / Favorite button not found.")
 
 
+async def try_repost(page, account_id):
+    """Simulates reposting the video to the account's followers via the Share menu or Repost button."""
+    # First, look for a direct Repost button or indicator if present
+    direct_repost = [
+        '[data-e2e="repost-button"]',
+        '[data-e2e="feed-repost"]',
+        'button:has-text("Repost")',
+        '[aria-label*="repost" i]'
+    ]
+    for sel in direct_repost:
+        btn = page.locator(sel).first
+        if await btn.is_visible():
+            await btn.hover()
+            await asyncio.sleep(random.uniform(0.3, 0.7))
+            await btn.click()
+            print(f"[{account_id}] 🔁 Reposted video via direct button!")
+            await asyncio.sleep(random.uniform(1.5, 3.0))
+            return
+
+    # In TikTok desktop, Repost is typically the first item inside the Share menu
+    share_selectors = [
+        'button[data-e2e="share-icon"]',
+        'span[data-e2e="share-icon"]',
+        'button[data-e2e="share-btn"]',
+        '[aria-label*="share" i]',
+        'button:has([data-e2e="share-icon"])'
+    ]
+    for sel in share_selectors:
+        btn = page.locator(sel).first
+        if await btn.is_visible():
+            await btn.hover()
+            await asyncio.sleep(random.uniform(0.4, 0.8))
+            await btn.click()
+            print(f"[{account_id}] 🔄 Opened Share menu to locate Repost...")
+            await asyncio.sleep(random.uniform(1.2, 2.0))
+
+            repost_locators = [
+                page.locator('[data-e2e="share-repost"]').first,
+                page.locator('div:has-text("Repost")').last,
+                page.locator('p:has-text("Repost")').first,
+                page.get_by_text("Repost", exact=True).first,
+                page.locator("xpath=//*[translate(normalize-space(text()), 'REPOST', 'repost') = 'repost']").first
+            ]
+
+            reposted = False
+            for loc in repost_locators:
+                try:
+                    if await loc.is_visible(timeout=1000):
+                        await loc.scroll_into_view_if_needed()
+                        await loc.click(force=True)
+                        print(f"[{account_id}] 🔁 Reposted video successfully!")
+                        reposted = True
+                        break
+                except Exception:
+                    pass
+
+            if not reposted:
+                # Direct DOM evaluation to click on Repost container
+                reposted_js = await page.evaluate('''() => {
+                    const el = document.querySelector('[data-e2e="share-repost"]') || document.querySelector('[data-e2e*="repost"]');
+                    if (el) {
+                        el.click();
+                        const child = el.querySelector('div, p');
+                        if (child) child.click();
+                        return true;
+                    }
+                    const all = document.querySelectorAll('*');
+                    for (let item of all) {
+                        if (item.children.length === 0 && item.textContent && item.textContent.trim().toLowerCase() === 'repost') {
+                            item.click();
+                            if (item.parentElement) item.parentElement.click();
+                            return true;
+                        }
+                    }
+                    return false;
+                }''')
+                if reposted_js:
+                    print(f"[{account_id}] 🔁 Reposted video via DOM trigger!")
+                    reposted = True
+
+            if not reposted:
+                print(f"[{account_id}] ⚠️ Repost option not found in Share menu (Account may need manual verification or already reposted).")
+                await page.keyboard.press("Escape")
+            else:
+                await asyncio.sleep(random.uniform(1.5, 3.0))
+                await page.keyboard.press("Escape")
+            return
+
+    print(f"[{account_id}] ⚠️ Share/Repost button not found.")
+
+
 
 
 
@@ -837,6 +932,9 @@ async def main():
     parser.add_argument("--like", action="store_true", help="Like the post")
     parser.add_argument("--follow", action="store_true", help="Follow the creator of the post")
     parser.add_argument("--comment", type=str, help="Specific comment text, or 'random' to pick varied comments")
+    parser.add_argument("--share", action="store_true", help="Share the post / copy link")
+    parser.add_argument("--save", action="store_true", help="Save / favorite the post")
+    parser.add_argument("--repost", action="store_true", help="Repost the video to your profile/followers")
     parser.add_argument("--delay-min", type=int, default=15, help="Minimum delay (seconds) between accounts (default: 15)")
     parser.add_argument("--delay-max", type=int, default=45, help="Maximum delay (seconds) between accounts (default: 45)")
     parser.add_argument("--accounts", type=str, help="Comma-separated account IDs to use (e.g. 'account_1,account_2'). Default: all")
@@ -890,7 +988,7 @@ async def main():
     print(f"\n========================================================")
     print(f"  Target Post: {args.url}")
     print(f"  Accounts to run: {len(selected_accounts)}")
-    print(f"  Actions: Like={args.like}, Follow={args.follow}, Comment={'Yes' if args.comment else 'No'}")
+    print(f"  Actions: Like={args.like}, Follow={args.follow}, Comment={'Yes' if args.comment else 'No'}, Share={args.share}, Save={args.save}, Repost={args.repost}")
     print(f"  Delay between accounts: {args.delay_min}s - {args.delay_max}s")
     print(f"========================================================\n")
 
@@ -909,7 +1007,10 @@ async def main():
             post_url=args.url,
             do_like=args.like,
             do_follow=args.follow,
-            comment_text=chosen_comment
+            comment_text=chosen_comment,
+            do_share=args.share,
+            do_save=args.save,
+            do_repost=args.repost
         )
 
         # Stagger delay before next account to avoid triggering bot detection

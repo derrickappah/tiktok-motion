@@ -201,6 +201,7 @@ def run_engagement_menu():
 
     do_share = input(f"Share / Copy link? (y/N): ").strip().lower() == "y"
     do_save = input(f"Save / Bookmark video? (y/N): ").strip().lower() == "y"
+    do_repost = input(f"Repost video to followers? (y/N): ").strip().lower() == "y"
 
     comment_choice = None
     if do_comment:
@@ -221,7 +222,7 @@ def run_engagement_menu():
     print(f"\n{CYAN}========================================================")
     print(f"  Target URL: {post_url}")
     print(f"  Accounts: {len(target_accounts)}")
-    print(f"  Actions: Like={do_like}, Follow={do_follow}, Comment={do_comment}, Share={do_share}, Save={do_save}")
+    print(f"  Actions: Like={do_like}, Follow={do_follow}, Comment={do_comment}, Share={do_share}, Save={do_save}, Repost={do_repost}")
     print(f"  Delays: {settings['delay_min']}s - {settings['delay_max']}s")
     print(f"========================================================{RESET}\n")
 
@@ -246,7 +247,8 @@ def run_engagement_menu():
                 do_follow=do_follow,
                 comment_text=comment_text if do_comment else None,
                 do_share=do_share,
-                do_save=do_save
+                do_save=do_save,
+                do_repost=do_repost
             )
 
 
@@ -268,7 +270,8 @@ def run_single_action_flow(action_type):
         "comment": "💬 COMMENT ON POST ONLY",
         "follow": "👤 FOLLOW CREATOR ONLY",
         "share": "🔄 SHARE / COPY LINK ONLY",
-        "save": "🔖 SAVE / FAVORITE POST ONLY"
+        "save": "🔖 SAVE / FAVORITE POST ONLY",
+        "repost": "🔁 REPOST VIDEO ONLY"
     }
 
 
@@ -354,7 +357,8 @@ def run_single_action_flow(action_type):
                 do_follow=(action_type == "follow"),
                 comment_text=c_text,
                 do_share=(action_type == "share"),
-                do_save=(action_type == "save")
+                do_save=(action_type == "save"),
+                do_repost=(action_type == "repost")
             )
 
 
@@ -801,19 +805,20 @@ def main():
         print(f"  {BOLD}[3]{RESET} 👤 Follow Creator Only")
         print(f"  {BOLD}[4]{RESET} 🔄 Share / Copy Link Only")
         print(f"  {BOLD}[5]{RESET} 🔖 Save / Favorite Post Only")
-        print(f"  {BOLD}[6]{RESET} 🚀 Custom Multi-Action (Combine Any Actions)")
+        print(f"  {BOLD}[6]{RESET} 🔁 Repost Video to Followers Only")
+        print(f"  {BOLD}[7]{RESET} 🚀 Custom Multi-Action (Combine Any Actions)")
         print(f"\n  {BOLD}--- AUTOMATION & SAFETY ---{RESET}")
-        print(f"  {BOLD}[7]{RESET} 🧘 FYP Warm-up Mode (Surfs feed, builds trust)")
-        print(f"  {BOLD}[8]{RESET} 📲 Start Telegram Remote Bot (Send links via phone)")
+        print(f"  {BOLD}[8]{RESET} 🧘 FYP Warm-up Mode (Surfs feed, builds trust)")
+        print(f"  {BOLD}[9]{RESET} 📲 Start Telegram Remote Bot (Send links via phone)")
         print(f"\n  {BOLD}--- MANAGEMENT ---{RESET}")
-        print(f"  {BOLD}[9]{RESET} 📋 Account Manager & Health Check")
-        print(f"  {BOLD}[10]{RESET} 🔑 Log Into an Account (Real Chrome)")
-        print(f"  {BOLD}[11]{RESET} 💬 Comment Templates Library")
-        print(f"  {BOLD}[12]{RESET} ⚙️ Settings (Delays, AI Keys, Telegram)")
-        print(f"  {BOLD}[13]{RESET} 🌐 Proxy Pool Manager ({len(proxies)} loaded)")
+        print(f"  {BOLD}[10]{RESET} 📋 Account Manager & Health Check")
+        print(f"  {BOLD}[11]{RESET} 🔑 Log Into an Account (Real Chrome)")
+        print(f"  {BOLD}[12]{RESET} 💬 Comment Templates Library")
+        print(f"  {BOLD}[13]{RESET} ⚙️ Settings (Delays, AI Keys, Telegram)")
+        print(f"  {BOLD}[14]{RESET} 🌐 Proxy Pool Manager ({len(proxies)} loaded)")
         print(f"  {BOLD}[0]{RESET} 🚪 Exit\n")
 
-        choice = input(f"{YELLOW}Select an option [0-13]:{RESET} ").strip()
+        choice = input(f"{YELLOW}Select an option [0-14]:{RESET} ").strip()
 
         if choice == "1":
             run_single_action_flow("like")
@@ -826,20 +831,22 @@ def main():
         elif choice == "5":
             run_single_action_flow("save")
         elif choice == "6":
-            run_engagement_menu()
+            run_single_action_flow("repost")
         elif choice == "7":
-            run_warmup_flow()
+            run_engagement_menu()
         elif choice == "8":
-            run_telegram_bot_flow()
+            run_warmup_flow()
         elif choice == "9":
-            account_manager_menu()
+            run_telegram_bot_flow()
         elif choice == "10":
-            login_assistant_menu()
+            account_manager_menu()
         elif choice == "11":
-            comment_library_menu()
+            login_assistant_menu()
         elif choice == "12":
-            settings_menu()
+            comment_library_menu()
         elif choice == "13":
+            settings_menu()
+        elif choice == "14":
             proxy_manager_menu()
         elif choice == "0":
             print(f"\n{CYAN}Thanks for using TikTok Motion by Dee! Goodbye.{RESET}\n")

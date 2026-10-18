@@ -61,17 +61,18 @@ def build_main_menu():
         ],
         [
             InlineKeyboardButton("🔖 Save / Favorite Only", callback_data="act_save"),
-            InlineKeyboardButton("🚀 Multi-Action (All)", callback_data="act_all"),
+            InlineKeyboardButton("🔁 Repost Only", callback_data="act_repost"),
         ],
         [
+            InlineKeyboardButton("🚀 Multi-Action (All)", callback_data="act_all"),
             InlineKeyboardButton("🧘 FYP Warm-Up", callback_data="act_warmup"),
-            InlineKeyboardButton("📊 Accounts Health", callback_data="cmd_status"),
         ],
         [
             InlineKeyboardButton("🌐 Proxy Pool", callback_data="cmd_proxies"),
             InlineKeyboardButton("💬 Comments", callback_data="cmd_comments"),
         ],
         [
+            InlineKeyboardButton("📊 Accounts Health", callback_data="cmd_status"),
             InlineKeyboardButton("⚙️ Settings / Delays", callback_data="cmd_settings"),
         ]
     ]
@@ -111,7 +112,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "act_follow": ("Follow Only", "follow"),
             "act_share": ("Share Only", "share"),
             "act_save": ("Save Only", "save"),
-            "act_all": ("Multi-Action (Like + Comment + Share + Save)", "all"),
+            "act_repost": ("Repost Only", "repost"),
+            "act_all": ("Multi-Action (Like + Comment + Share + Save + Repost)", "all"),
             "act_warmup": ("FYP Warm-Up", "warmup")
         }
         title, act_type = action_map.get(data, ("Engagement", "all"))
@@ -254,7 +256,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "follow": "👤 Follow Only",
         "share": "🔄 Share Only",
         "save": "🔖 Save Only",
-        "all": "🚀 Multi-Action (Like + Comment + Share + Save)"
+        "repost": "🔁 Repost Only",
+        "all": "🚀 Multi-Action (Like + Comment + Share + Save + Repost)"
     }
     action_label = action_names.get(chosen_action, "Custom Engagement")
 
@@ -287,6 +290,7 @@ async def run_engagement_pipeline(chat_id: int, context: ContextTypes.DEFAULT_TY
     do_follow = action_type in ["follow"]
     do_share = action_type in ["share", "all"]
     do_save = action_type in ["save", "all"]
+    do_repost = action_type in ["repost", "all"]
     comment_text = "ai" if action_type in ["comment", "all"] else None
 
     success_count = 0
@@ -301,7 +305,8 @@ async def run_engagement_pipeline(chat_id: int, context: ContextTypes.DEFAULT_TY
             do_follow=do_follow,
             comment_text=comment_text,
             do_share=do_share,
-            do_save=do_save
+            do_save=do_save,
+            do_repost=do_repost
         )
         if res:
             success_count += 1
