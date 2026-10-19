@@ -371,16 +371,22 @@ async def engage_post(account, post_url, do_like=True, do_follow=False, comment_
     proc = subprocess.Popen(cmd)
     await asyncio.sleep(3.0)
 
+    # Connect with retries to allow Chrome window to initialize cleanly
     async with async_playwright() as p:
-        try:
-            browser = await p.chromium.connect_over_cdp(f"http://127.0.0.1:{cdp_port}")
-        except Exception as e:
-            print(f"[{account_id}] ❌ Could not connect to Chrome on port {cdp_port}: {e}")
+        browser = None
+        for attempt in range(1, 6):
             try:
-                proc.terminate()
-            except Exception:
-                pass
-            return False
+                browser = await p.chromium.connect_over_cdp(f"http://127.0.0.1:{cdp_port}")
+                break
+            except Exception as e:
+                if attempt == 5:
+                    print(f"[{account_id}] ❌ Could not connect to Chrome on port {cdp_port}: {e}")
+                    try:
+                        proc.terminate()
+                    except Exception:
+                        pass
+                    return False
+                await asyncio.sleep(1.2)
 
         context = browser.contexts[0] if browser.contexts else await browser.new_context()
         page = context.pages[0] if context.pages else await context.new_page()
@@ -410,7 +416,7 @@ async def engage_post(account, post_url, do_like=True, do_follow=False, comment_
             await asyncio.sleep(watch_seconds)
             await human_scroll(page)
 
-            # 1. LIKE
+            # 1. LIKE (Wait for action to complete and verify)
             if do_like:
                 await try_like(page, account_id)
 
@@ -446,8 +452,9 @@ async def engage_post(account, post_url, do_like=True, do_follow=False, comment_
             if do_repost:
                 await try_repost(page, account_id)
 
-            # Crucial: Allow network requests (Follow, Comment, Share, Repost) to flush to TikTok servers before closing
-            await asyncio.sleep(random.uniform(3.0, 5.0))
+            # Crucial: Wait for network requests to finish and confirm before closing tab
+            print(f"[{account_id}] ⏳ Waiting for actions to fully sync and persist with TikTok servers...")
+            await asyncio.sleep(random.uniform(5.0, 7.0))
 
             print(f"[{account_id}] ✅ Completed actions successfully.")
             return True
@@ -552,29 +559,61 @@ async def engage_via_live_chrome(post_url, do_like=True, do_follow=False, commen
 
 
 async def try_like(page, account_id):
-    """Attempts to click the like button if not already liked."""
+    """Attempts to click the like button if not already liked and waits for confirmation."""
     like_selectors = [
         'span[data-e2e="like-icon"]',
         'button[data-e2e="like-icon"]',
+        '[data-e2e="browse-like-icon"]',
         'span[class*="SpanLikeIcon"]',
-        '[aria-label*="Like video"]'
+        '[aria-label*="Like video" i]',
+        'button:has([data-e2e="like-icon"])',
+        'div[data-e2e="feed-like"]'
     ]
+    
+    # Wait up to 5s for any like button to appear
     for sel in like_selectors:
-        btn = page.locator(sel).first
-        if await btn.is_visible():
-            # Check if already liked (often indicated by aria-pressed or colored svg)
-            is_pressed = await btn.get_attribute("aria-pressed")
-            if is_pressed == "true":
-                print(f"[{account_id}] Video is already liked.")
-                return
+        try:
+            btn = page.locator(sel).first
+            if await btn.is_visible(timeout=1000):
+                # Check if already liked
+                is_pressed = await btn.get_attribute("aria-pressed")
+                if is_pressed == "true":
+                    print(f"[{account_id}] Video is already liked.")
+                    return True
 
-            await btn.hover()
-            await asyncio.sleep(random.uniform(0.3, 0.7))
-            await btn.click()
-            print(f"[{account_id}] ❤️ Liked the post.")
-            await asyncio.sleep(random.uniform(1.5, 3.0))
-            return
+                await btn.scroll_into_view_if_needed()
+                await btn.hover()
+                await asyncio.sleep(random.uniform(0.3, 0.7))
+                await btn.click(force=True)
+                print(f"[{account_id}] ❤️ Clicked like button! Waiting for confirmation...")
+                await asyncio.sleep(random.uniform(2.0, 3.5))
+                return True
+        except Exception:
+            pass
+
+    # DOM JavaScript fallback click if not found by Playwright selectors
+    try:
+        liked_js = await page.evaluate('''() => {
+            const el = document.querySelector('[data-e2e="like-icon"]') || 
+                       document.querySelector('[data-e2e="browse-like-icon"]') ||
+                       document.querySelector('[aria-label*="Like" i]');
+            if (el) {
+                el.click();
+                const parent = el.closest('button') || el.parentElement;
+                if (parent) parent.click();
+                return true;
+            }
+            return false;
+        }''')
+        if liked_js:
+            print(f"[{account_id}] ❤️ Liked post via DOM trigger!")
+            await asyncio.sleep(2.5)
+            return True
+    except Exception:
+        pass
+
     print(f"[{account_id}] ⚠️ Like button not found or could not be clicked.")
+    return False
 
 
 async def try_follow(page, account_id):

@@ -321,13 +321,19 @@ async def run_engagement_pipeline(chat_id: int, context: ContextTypes.DEFAULT_TY
         exec_accounts = list(active_accounts)
         random.shuffle(exec_accounts)
 
+        async def safe_send_message(text: str, reply_markup=None):
+            try:
+                await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=reply_markup, parse_mode="Markdown")
+            except Exception as e:
+                print(f"[Telegram Notice] Could not send message: {e}")
+
         async def run_acc(acc, idx):
             stagger = (idx % concurrency_limit) * 1.5
             if stagger > 0:
                 await asyncio.sleep(stagger)
 
             async with sem:
-                await context.bot.send_message(chat_id=chat_id, text=f"🚀 [Vid {u_idx}/{total_urls} | Acc {idx+1}/{total_accs}] Starting `{acc['id']}`...", parse_mode="Markdown")
+                await safe_send_message(f"🚀 [Vid {u_idx}/{total_urls} | Acc {idx+1}/{total_accs}] Starting `{acc['id']}`...")
                 res = await engage_post(
                     account=acc,
                     post_url=current_url,
@@ -344,7 +350,7 @@ async def run_engagement_pipeline(chat_id: int, context: ContextTypes.DEFAULT_TY
         success_count = sum(1 for r in results if r)
 
         if u_idx < total_urls:
-            await context.bot.send_message(chat_id=chat_id, text=f"⏸️ Video {u_idx} completed ({success_count}/{total_accs} success). Cooling down 5s before next video...", parse_mode="Markdown")
+            await safe_send_message(f"⏸️ Video {u_idx} completed ({success_count}/{total_accs} success). Cooling down 5s before next video...")
             await asyncio.sleep(5.0)
 
     done_msg = (
@@ -354,7 +360,7 @@ async def run_engagement_pipeline(chat_id: int, context: ContextTypes.DEFAULT_TY
         f"• Concurrency: *{concurrency_limit} parallel*\n\n"
         f"Ready for your next link(s)!"
     )
-    await context.bot.send_message(chat_id=chat_id, text=done_msg, reply_markup=build_main_menu(), parse_mode="Markdown")
+    await safe_send_message(done_msg, reply_markup=build_main_menu())
 
 
 async def run_warmup_pipeline(chat_id: int, context: ContextTypes.DEFAULT_TYPE, duration_mins: int):
@@ -399,7 +405,15 @@ def main():
     print("========================================================")
 
     try:
-        app = ApplicationBuilder().token(token).build()
+        app = (
+            ApplicationBuilder()
+            .token(token)
+            .connect_timeout(30.0)
+            .read_timeout(30.0)
+            .write_timeout(30.0)
+            .pool_timeout(30.0)
+            .build()
+        )
         app.add_handler(CommandHandler("start", start_cmd))
         app.add_handler(CommandHandler("menu", start_cmd))
         app.add_handler(CallbackQueryHandler(button_callback))
