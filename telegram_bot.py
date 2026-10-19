@@ -211,6 +211,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cfg = get_config()
         msg = (
             f"⚙️ *Current Settings:*\n\n"
+            f"• Concurrent Accounts: *{cfg.get('concurrency', 5)} at a time*\n"
             f"• Minimum Delay: *{cfg.get('delay_min', 15)}s*\n"
             f"• Maximum Delay: *{cfg.get('delay_max', 45)}s*\n"
             f"• AI Comments: *{'Enabled (Gemini)' if cfg.get('gemini_api_key') else 'Disabled (Preset Fallback)'}*\n"
@@ -264,6 +265,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     }
     action_label = action_names.get(chosen_action, "Custom Engagement")
 
+    config = get_config()
+    conc = config.get("concurrency", 5)
+
     url_summary = "\n".join([f"• `{u}`" for u in urls[:5]])
     if len(urls) > 5:
         url_summary += f"\n_...and {len(urls) - 5} more._"
@@ -271,9 +275,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"⚡ *Task Received!*\n\n"
         f"• *Queue Size:* {len(urls)} video(s)\n"
-        f"• *Action:* `{action_label}`\n\n"
+        f"• *Action:* `{action_label}`\n"
+        f"• *Parallel Mode:* `{conc} accounts at once`\n\n"
         f"*Target Queue:*\n{url_summary}\n\n"
-        f"Starting queue execution from top to down...",
+        f"Starting execution...",
         parse_mode="Markdown"
     )
 
@@ -291,8 +296,7 @@ async def run_engagement_pipeline(chat_id: int, context: ContextTypes.DEFAULT_TY
         return
 
     config = get_config()
-    delay_min = config.get("delay_min", 15)
-    delay_max = config.get("delay_max", 45)
+    concurrency_limit = config.get("concurrency", 5)
 
     do_like = action_type in ["like", "all"]
     do_follow = action_type in ["follow"]
@@ -304,10 +308,12 @@ async def run_engagement_pipeline(chat_id: int, context: ContextTypes.DEFAULT_TY
     total_urls = len(urls)
     total_accs = len(active_accounts)
 
+    sem = asyncio.Semaphore(concurrency_limit)
+
     for u_idx, current_url in enumerate(urls, 1):
         await context.bot.send_message(
             chat_id=chat_id,
-            text=f"▶️ *Processing Video [{u_idx}/{total_urls}]:*\n`{current_url}`",
+            text=f"▶️ *Processing Video [{u_idx}/{total_urls}]:*\n`{current_url}`\n(🚀 Running up to {min(concurrency_limit, total_accs)} accounts concurrently)",
             parse_mode="Markdown"
         )
 
@@ -315,34 +321,37 @@ async def run_engagement_pipeline(chat_id: int, context: ContextTypes.DEFAULT_TY
         exec_accounts = list(active_accounts)
         random.shuffle(exec_accounts)
 
-        success_count = 0
-        for i, acc in enumerate(exec_accounts):
-            await context.bot.send_message(chat_id=chat_id, text=f"⏳ [Video {u_idx}/{total_urls} | Acc {i+1}/{total_accs}] Running `{acc['id']}`...", parse_mode="Markdown")
-            res = await engage_post(
-                account=acc,
-                post_url=current_url,
-                do_like=do_like,
-                do_follow=do_follow,
-                comment_text=comment_text,
-                do_share=do_share,
-                do_save=do_save,
-                do_repost=do_repost
-            )
-            if res:
-                success_count += 1
+        async def run_acc(acc, idx):
+            stagger = (idx % concurrency_limit) * 1.5
+            if stagger > 0:
+                await asyncio.sleep(stagger)
 
-            if i < total_accs - 1:
-                cooldown = random.uniform(delay_min, delay_max)
-                await asyncio.sleep(cooldown)
+            async with sem:
+                await context.bot.send_message(chat_id=chat_id, text=f"🚀 [Vid {u_idx}/{total_urls} | Acc {idx+1}/{total_accs}] Starting `{acc['id']}`...", parse_mode="Markdown")
+                res = await engage_post(
+                    account=acc,
+                    post_url=current_url,
+                    do_like=do_like,
+                    do_follow=do_follow,
+                    comment_text=comment_text,
+                    do_share=do_share,
+                    do_save=do_save,
+                    do_repost=do_repost
+                )
+                return res
+
+        results = await asyncio.gather(*[run_acc(acc, i) for i, acc in enumerate(exec_accounts)])
+        success_count = sum(1 for r in results if r)
 
         if u_idx < total_urls:
-            await context.bot.send_message(chat_id=chat_id, text=f"⏸️ Video {u_idx} done. Cooling down 5s before next video...", parse_mode="Markdown")
+            await context.bot.send_message(chat_id=chat_id, text=f"⏸️ Video {u_idx} completed ({success_count}/{total_accs} success). Cooling down 5s before next video...", parse_mode="Markdown")
             await asyncio.sleep(5.0)
 
     done_msg = (
         f"🎉 *Queue Completed!*\n\n"
         f"• Videos processed: *{total_urls}*\n"
-        f"• Action: `{action_type.upper()}`\n\n"
+        f"• Action: `{action_type.upper()}`\n"
+        f"• Concurrency: *{concurrency_limit} parallel*\n\n"
         f"Ready for your next link(s)!"
     )
     await context.bot.send_message(chat_id=chat_id, text=done_msg, reply_markup=build_main_menu(), parse_mode="Markdown")

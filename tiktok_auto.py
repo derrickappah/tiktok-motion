@@ -326,8 +326,7 @@ async def human_scroll(page):
         pass
 
 
-async def engage_post(account, post_url, do_like=True, do_follow=False, comment_text=None, do_share=False, do_save=False, do_repost=False, min_watch=8, max_watch=15):
-
+async def engage_post(account, post_url, do_like=True, do_follow=False, comment_text=None, do_share=False, do_save=False, do_repost=False, min_watch=8, max_watch=15, cdp_port=None):
 
     account_id = account["id"]
     profile_path = PROFILES_DIR / account_id
@@ -335,6 +334,16 @@ async def engage_post(account, post_url, do_like=True, do_follow=False, comment_
     if not profile_path.exists():
         print(f"[-] Profile for '{account_id}' does not exist yet. Run '--login {account_id}' first.")
         return False
+
+    # Choose a unique debugging port if not specified
+    if cdp_port is None:
+        import socket
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.bind(('127.0.0.1', 0))
+                cdp_port = s.getsockname()[1]
+        except Exception:
+            cdp_port = random.randint(9222, 9999)
 
     # Check proxy: dedicated account proxy, or random pick from proxies.txt pool
     proxy_str = account.get("proxy") or get_random_proxy()
@@ -344,7 +353,7 @@ async def engage_post(account, post_url, do_like=True, do_follow=False, comment_
         print(f"[{account_id}] 🌐 Using Proxy: {clean_px}")
         proxy_flag = [f"--proxy-server={clean_px}"]
 
-    print(f"\n[{account_id}] Starting engagement...")
+    print(f"\n[{account_id}] Starting engagement (Port {cdp_port})...")
 
     import subprocess
     chrome_exe = get_chrome_path()
@@ -352,31 +361,29 @@ async def engage_post(account, post_url, do_like=True, do_follow=False, comment_
         print(f"[!] Google Chrome executable not found at: {chrome_exe}")
         return False
 
-    # Kill old Chrome instance so new account profile loads cleanly
-    subprocess.run(["taskkill", "/F", "/IM", "chrome.exe"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    await asyncio.sleep(1.0)
-
-    # Launch real Google Chrome on port 9222 with this specific account profile and proxy
+    # Launch real Google Chrome with this specific account profile and proxy
     cmd = [
         chrome_exe,
-        f"--remote-debugging-port=9222",
+        f"--remote-debugging-port={cdp_port}",
         f"--user-data-dir={profile_path.resolve()}",
         "--start-maximized"
     ] + proxy_flag
-    subprocess.Popen(cmd)
+    proc = subprocess.Popen(cmd)
     await asyncio.sleep(3.0)
-
 
     async with async_playwright() as p:
         try:
-            browser = await p.chromium.connect_over_cdp("http://localhost:9222")
+            browser = await p.chromium.connect_over_cdp(f"http://127.0.0.1:{cdp_port}")
         except Exception as e:
-            print(f"[{account_id}] ❌ Could not connect to Chrome: {e}")
+            print(f"[{account_id}] ❌ Could not connect to Chrome on port {cdp_port}: {e}")
+            try:
+                proc.terminate()
+            except Exception:
+                pass
             return False
 
         context = browser.contexts[0] if browser.contexts else await browser.new_context()
         page = context.pages[0] if context.pages else await context.new_page()
-
 
         try:
             print(f"[{account_id}] Navigating to: {post_url}")
@@ -402,8 +409,6 @@ async def engage_post(account, post_url, do_like=True, do_follow=False, comment_
             print(f"[{account_id}] Watching video for {watch_seconds:.1f}s (simulating human viewer)...")
             await asyncio.sleep(watch_seconds)
             await human_scroll(page)
-
-
 
             # 1. LIKE
             if do_like:
@@ -447,15 +452,24 @@ async def engage_post(account, post_url, do_like=True, do_follow=False, comment_
             print(f"[{account_id}] ✅ Completed actions successfully.")
             return True
 
-
-
         except Exception as e:
             print(f"[{account_id}] ❌ Error during engagement: {e}")
             return False
         finally:
             # Settle and flush storage/cookies cleanly
             await asyncio.sleep(1.0)
-            await context.close()
+            try:
+                await context.close()
+            except Exception:
+                pass
+            try:
+                proc.terminate()
+                proc.wait(timeout=3)
+            except Exception:
+                try:
+                    subprocess.run(["taskkill", "/F", "/PID", str(proc.pid), "/T"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                except Exception:
+                    pass
 
 
 async def engage_via_live_chrome(post_url, do_like=True, do_follow=False, comment_text=None, account_id="acc_1"):

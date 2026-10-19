@@ -254,9 +254,11 @@ def run_engagement_menu():
             comment_choice = "random"
 
     # Execution summary
+    concurrency_limit = settings.get("concurrency", 5)
     print(f"\n{CYAN}========================================================")
     print(f"  Target Videos in Queue: {len(urls)}")
     print(f"  Accounts per Video: {len(target_accounts)}")
+    print(f"  Concurrent Accounts (Parallel): {min(concurrency_limit, len(target_accounts))}")
     print(f"  Actions: Like={do_like}, Follow={do_follow}, Comment={do_comment}, Share={do_share}, Save={do_save}, Repost={do_repost}")
     print(f"  Delays: {settings['delay_min']}s - {settings['delay_max']}s")
     print(f"========================================================{RESET}\n")
@@ -269,9 +271,12 @@ def run_engagement_menu():
     from tiktok_auto import engage_post
 
     async def execute_all():
+        sem = asyncio.Semaphore(concurrency_limit)
+
         for u_idx, post_url in enumerate(urls, 1):
             print(f"\n{MAGENTA}{BOLD}========================================================")
             print(f"  ▶️ Processing Video [{u_idx}/{len(urls)}]: {post_url}")
+            print(f"  🚀 Concurrency: Running up to {concurrency_limit} accounts at the same time")
             print(f"========================================================{RESET}")
 
             # Randomize order of accounts for each video
@@ -279,27 +284,32 @@ def run_engagement_menu():
             random.shuffle(exec_accounts)
             print(f"{CYAN}[🎲] Account order: {', '.join([a['id'] for a in exec_accounts])}{RESET}")
 
-            for i, acc in enumerate(exec_accounts):
-                comment_text = comment_choice
-                if comment_choice == "random":
-                    comment_text = random.choice(load_comments())
+            async def run_single_acc(acc, acc_index):
+                # Stagger launch slightly so windows don't clash simultaneously on startup
+                stagger_delay = (acc_index % concurrency_limit) * 1.5
+                if stagger_delay > 0:
+                    await asyncio.sleep(stagger_delay)
 
-                print(f"\n{BOLD}[Video {u_idx}/{len(urls)} | Account {i+1}/{len(exec_accounts)}] Running {acc['id']}...{RESET}")
-                await engage_post(
-                    account=acc,
-                    post_url=post_url,
-                    do_like=do_like,
-                    do_follow=do_follow,
-                    comment_text=comment_text if do_comment else None,
-                    do_share=do_share,
-                    do_save=do_save,
-                    do_repost=do_repost
-                )
+                async with sem:
+                    comment_text = comment_choice
+                    if comment_choice == "random":
+                        comment_text = random.choice(load_comments())
 
-                if i < len(exec_accounts) - 1:
-                    cooldown = random.uniform(settings["delay_min"], settings["delay_max"])
-                    print(f"{YELLOW}[⏳] Cooling down for {cooldown:.1f}s before next account...{RESET}")
-                    await asyncio.sleep(cooldown)
+                    print(f"\n{BOLD}[Video {u_idx}/{len(urls)} | Acc {acc_index+1}/{len(exec_accounts)}] 🚀 Launching {acc['id']}...{RESET}")
+                    res = await engage_post(
+                        account=acc,
+                        post_url=post_url,
+                        do_like=do_like,
+                        do_follow=do_follow,
+                        comment_text=comment_text if do_comment else None,
+                        do_share=do_share,
+                        do_save=do_save,
+                        do_repost=do_repost
+                    )
+                    return res
+
+            tasks = [run_single_acc(acc, idx) for idx, acc in enumerate(exec_accounts)]
+            await asyncio.gather(*tasks)
 
             if u_idx < len(urls):
                 print(f"\n{CYAN}[⏸️] Completed video {u_idx}. Waiting 5s before starting next video in queue...{RESET}")
@@ -381,10 +391,12 @@ def run_single_action_flow(action_type):
             comment_choice = "random"
 
     settings = load_settings()
+    concurrency_limit = settings.get("concurrency", 5)
     print(f"\n{CYAN}========================================================")
     print(f"  Target Videos in Queue: {len(urls)}")
     print(f"  Action: {action_titles.get(action_type)}")
     print(f"  Accounts per Video: {len(target_accounts)}")
+    print(f"  Concurrent Accounts (Parallel): {min(concurrency_limit, len(target_accounts))}")
     print(f"  Delays: {settings['delay_min']}s - {settings['delay_max']}s")
     print(f"========================================================{RESET}\n")
 
@@ -395,9 +407,12 @@ def run_single_action_flow(action_type):
     from tiktok_auto import engage_post
 
     async def execute():
+        sem = asyncio.Semaphore(concurrency_limit)
+
         for u_idx, post_url in enumerate(urls, 1):
             print(f"\n{MAGENTA}{BOLD}========================================================")
             print(f"  ▶️ Processing Video [{u_idx}/{len(urls)}]: {post_url}")
+            print(f"  🚀 Concurrency: Running up to {concurrency_limit} accounts at the same time")
             print(f"========================================================{RESET}")
 
             # Randomize order of accounts for each video
@@ -405,27 +420,32 @@ def run_single_action_flow(action_type):
             random.shuffle(exec_accounts)
             print(f"{CYAN}[🎲] Account order: {', '.join([a['id'] for a in exec_accounts])}{RESET}")
 
-            for i, acc in enumerate(exec_accounts):
-                c_text = None
-                if action_type == "comment":
-                    c_text = random.choice(load_comments()) if comment_choice == "random" else comment_choice
+            async def run_single_acc(acc, acc_index):
+                # Stagger launch slightly
+                stagger_delay = (acc_index % concurrency_limit) * 1.5
+                if stagger_delay > 0:
+                    await asyncio.sleep(stagger_delay)
 
-                print(f"\n{BOLD}[Video {u_idx}/{len(urls)} | Account {i+1}/{len(exec_accounts)}] Running {acc['id']} ({action_type})...{RESET}")
-                await engage_post(
-                    account=acc,
-                    post_url=post_url,
-                    do_like=(action_type == "like"),
-                    do_follow=(action_type == "follow"),
-                    comment_text=c_text,
-                    do_share=(action_type == "share"),
-                    do_save=(action_type == "save"),
-                    do_repost=(action_type == "repost")
-                )
+                async with sem:
+                    c_text = None
+                    if action_type == "comment":
+                        c_text = random.choice(load_comments()) if comment_choice == "random" else comment_choice
 
-                if i < len(exec_accounts) - 1:
-                    cooldown = random.uniform(settings["delay_min"], settings["delay_max"])
-                    print(f"{YELLOW}[⏳] Cooling down for {cooldown:.1f}s before next account...{RESET}")
-                    await asyncio.sleep(cooldown)
+                    print(f"\n{BOLD}[Video {u_idx}/{len(urls)} | Acc {acc_index+1}/{len(exec_accounts)}] 🚀 Launching {acc['id']} ({action_type})...{RESET}")
+                    res = await engage_post(
+                        account=acc,
+                        post_url=post_url,
+                        do_like=(action_type == "like"),
+                        do_follow=(action_type == "follow"),
+                        comment_text=c_text,
+                        do_share=(action_type == "share"),
+                        do_save=(action_type == "save"),
+                        do_repost=(action_type == "repost")
+                    )
+                    return res
+
+            tasks = [run_single_acc(acc, idx) for idx, acc in enumerate(exec_accounts)]
+            await asyncio.gather(*tasks)
 
             if u_idx < len(urls):
                 print(f"\n{CYAN}[⏸️] Completed video {u_idx}. Waiting 5s before next video in queue...{RESET}")
@@ -719,6 +739,8 @@ def settings_menu():
         print(f"{BOLD}[5] ⚙️ SPEED & DELAY SETTINGS{RESET}\n")
 
         settings = load_settings()
+        concurrency = settings.get("concurrency", 5)
+        print(f"  Concurrent Accounts (Parallel): {CYAN}{concurrency}{RESET}")
         print(f"  Minimum Delay between accounts: {CYAN}{settings['delay_min']} seconds{RESET}")
         print(f"  Maximum Delay between accounts: {CYAN}{settings['delay_max']} seconds{RESET}")
         print(f"  Default Like:    {CYAN}{settings['default_actions']['like']}{RESET}")
@@ -729,6 +751,7 @@ def settings_menu():
         print("  [1] Change Delays (Cooldown between accounts)")
         print("  [2] Configure Gemini API Key (AI Comments)")
         print("  [3] Configure Telegram Bot (Remote Control)")
+        print("  [4] Change Concurrency (Number of accounts to launch at a time)")
         print("  [0] Back to Main Menu")
 
         choice = input(f"\n{YELLOW}Select an option:{RESET} ").strip()
@@ -766,6 +789,19 @@ def settings_menu():
             settings["telegram_chat_id"] = new_cid
             save_settings(settings)
             print(f"{GREEN}[+] Telegram settings saved!{RESET}")
+            time.sleep(1.2)
+
+        elif choice == "4":
+            try:
+                new_conc = int(input("Enter number of accounts to launch concurrently (e.g. 1-10) [default 5]: ").strip() or "5")
+                if 1 <= new_conc <= 20:
+                    settings["concurrency"] = new_conc
+                    save_settings(settings)
+                    print(f"{GREEN}[+] Concurrency set to {new_conc} accounts at a time!{RESET}")
+                else:
+                    print(f"{RED}[!] Please choose a value between 1 and 20.{RESET}")
+            except ValueError:
+                print(f"{RED}[!] Please enter a valid number.{RESET}")
             time.sleep(1.2)
 
         elif choice == "0":
