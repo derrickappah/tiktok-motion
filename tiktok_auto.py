@@ -393,7 +393,16 @@ async def engage_post(account, post_url, do_like=True, do_follow=False, comment_
 
         try:
             print(f"[{account_id}] Navigating to: {post_url}")
-            await page.goto(post_url, wait_until="domcontentloaded", timeout=45000)
+            try:
+                await page.goto(post_url, wait_until="commit", timeout=45000)
+            except Exception:
+                await page.goto(post_url, wait_until="domcontentloaded", timeout=60000)
+
+            # Wait for video container or main feed to render on slow networks
+            try:
+                await page.wait_for_selector('video, div[data-e2e="feed-video"], div[class*="DivVideoContainer"]', timeout=15000)
+            except Exception:
+                pass
 
             # Check if TikTok popped up a CAPTCHA slider puzzle
             captcha_indicator = page.locator('text="Drag the slider to fit the puzzle", div[class*="captcha_verify_container"]')
@@ -559,56 +568,78 @@ async def engage_via_live_chrome(post_url, do_like=True, do_follow=False, commen
 
 
 async def try_like(page, account_id):
-    """Attempts to click the like button if not already liked and waits for confirmation."""
+    """Attempts to click the like button under slow networks, retrying and using keyboard/DOM fallbacks."""
     like_selectors = [
         'span[data-e2e="like-icon"]',
         'button[data-e2e="like-icon"]',
         '[data-e2e="browse-like-icon"]',
         'span[class*="SpanLikeIcon"]',
         '[aria-label*="Like video" i]',
+        '[aria-label*="Like" i]',
         'button:has([data-e2e="like-icon"])',
         'div[data-e2e="feed-like"]'
     ]
-    
-    # Wait up to 5s for any like button to appear
-    for sel in like_selectors:
-        try:
-            btn = page.locator(sel).first
-            if await btn.is_visible(timeout=1000):
-                # Check if already liked
-                is_pressed = await btn.get_attribute("aria-pressed")
-                if is_pressed == "true":
-                    print(f"[{account_id}] Video is already liked.")
-                    return True
 
-                await btn.scroll_into_view_if_needed()
-                await btn.hover()
-                await asyncio.sleep(random.uniform(0.3, 0.7))
-                await btn.click(force=True)
-                print(f"[{account_id}] ❤️ Clicked like button! Waiting for confirmation...")
-                await asyncio.sleep(random.uniform(2.0, 3.5))
+    # Retry loop: On slow networks or when running 5 parallel tabs, the page elements can take up to 12s to render
+    for attempt in range(1, 4):
+        for sel in like_selectors:
+            try:
+                btn = page.locator(sel).first
+                if await btn.is_visible(timeout=1500):
+                    # Check if already liked
+                    is_pressed = await btn.get_attribute("aria-pressed")
+                    if is_pressed == "true":
+                        print(f"[{account_id}] Video is already liked.")
+                        return True
+
+                    await btn.scroll_into_view_if_needed()
+                    await btn.hover()
+                    await asyncio.sleep(random.uniform(0.3, 0.7))
+                    await btn.click(force=True)
+                    print(f"[{account_id}] ❤️ Clicked like button! Waiting for confirmation...")
+                    await asyncio.sleep(random.uniform(2.0, 3.5))
+                    return True
+            except Exception:
+                pass
+
+        # Try DOM JavaScript evaluation on this attempt
+        try:
+            liked_js = await page.evaluate('''() => {
+                const el = document.querySelector('[data-e2e="like-icon"]') || 
+                           document.querySelector('[data-e2e="browse-like-icon"]') ||
+                           document.querySelector('[aria-label*="Like" i]');
+                if (el) {
+                    el.click();
+                    const parent = el.closest('button') || el.parentElement;
+                    if (parent) parent.click();
+                    return true;
+                }
+                return false;
+            }''')
+            if liked_js:
+                print(f"[{account_id}] ❤️ Liked post via DOM trigger!")
+                await asyncio.sleep(2.5)
                 return True
         except Exception:
             pass
 
-    # DOM JavaScript fallback click if not found by Playwright selectors
-    try:
-        liked_js = await page.evaluate('''() => {
-            const el = document.querySelector('[data-e2e="like-icon"]') || 
-                       document.querySelector('[data-e2e="browse-like-icon"]') ||
-                       document.querySelector('[aria-label*="Like" i]');
-            if (el) {
-                el.click();
-                const parent = el.closest('button') || el.parentElement;
-                if (parent) parent.click();
-                return true;
-            }
-            return false;
-        }''')
-        if liked_js:
-            print(f"[{account_id}] ❤️ Liked post via DOM trigger!")
+        # If not visible yet, wait 2.5s for slow network to catch up before next retry
+        if attempt < 3:
+            print(f"[{account_id}] ⏳ Slow network: Waiting for video actions to render (retry {attempt}/3)...")
             await asyncio.sleep(2.5)
-            return True
+
+    # Final Fallback for TikTok Desktop: The global keyboard shortcut 'L' or double-click to like
+    try:
+        print(f"[{account_id}] 🔄 Using TikTok desktop shortcut key 'L' to like...")
+        # Click video area to ensure focus
+        video_area = page.locator('video, div[class*="DivVideoContainer"]').first
+        if await video_area.is_visible():
+            await video_area.click()
+            await asyncio.sleep(0.5)
+        await page.keyboard.press("l")
+        await asyncio.sleep(2.0)
+        print(f"[{account_id}] ❤️ Sent like keypress 'L'!")
+        return True
     except Exception:
         pass
 
