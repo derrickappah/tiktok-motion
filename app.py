@@ -255,10 +255,13 @@ def run_engagement_menu():
 
     # Execution summary
     concurrency_limit = settings.get("concurrency", 5)
+    watch_min = settings.get("watch_time_min", 8)
+    watch_max = settings.get("watch_time_max", 15)
     print(f"\n{CYAN}========================================================")
     print(f"  Target Videos in Queue: {len(urls)}")
     print(f"  Accounts per Video: {len(target_accounts)}")
     print(f"  Concurrent Accounts (Parallel): {min(concurrency_limit, len(target_accounts))}")
+    print(f"  Watch Time before actions: {watch_min}s - {watch_max}s")
     print(f"  Actions: Like={do_like}, Follow={do_follow}, Comment={do_comment}, Share={do_share}, Save={do_save}, Repost={do_repost}")
     print(f"  Delays: {settings['delay_min']}s - {settings['delay_max']}s")
     print(f"========================================================{RESET}\n")
@@ -304,7 +307,9 @@ def run_engagement_menu():
                         comment_text=comment_text if do_comment else None,
                         do_share=do_share,
                         do_save=do_save,
-                        do_repost=do_repost
+                        do_repost=do_repost,
+                        min_watch=watch_min,
+                        max_watch=watch_max
                     )
                     return res
 
@@ -392,11 +397,14 @@ def run_single_action_flow(action_type):
 
     settings = load_settings()
     concurrency_limit = settings.get("concurrency", 5)
+    watch_min = settings.get("watch_time_min", 8)
+    watch_max = settings.get("watch_time_max", 15)
     print(f"\n{CYAN}========================================================")
     print(f"  Target Videos in Queue: {len(urls)}")
     print(f"  Action: {action_titles.get(action_type)}")
     print(f"  Accounts per Video: {len(target_accounts)}")
     print(f"  Concurrent Accounts (Parallel): {min(concurrency_limit, len(target_accounts))}")
+    print(f"  Watch Time before actions: {watch_min}s - {watch_max}s")
     print(f"  Delays: {settings['delay_min']}s - {settings['delay_max']}s")
     print(f"========================================================{RESET}\n")
 
@@ -440,7 +448,9 @@ def run_single_action_flow(action_type):
                         comment_text=c_text,
                         do_share=(action_type == "share"),
                         do_save=(action_type == "save"),
-                        do_repost=(action_type == "repost")
+                        do_repost=(action_type == "repost"),
+                        min_watch=watch_min,
+                        max_watch=watch_max
                     )
                     return res
 
@@ -740,7 +750,10 @@ def settings_menu():
 
         settings = load_settings()
         concurrency = settings.get("concurrency", 5)
+        watch_min = settings.get("watch_time_min", 8)
+        watch_max = settings.get("watch_time_max", 15)
         print(f"  Concurrent Accounts (Parallel): {CYAN}{concurrency}{RESET}")
+        print(f"  Watch Time before actions:      {CYAN}{watch_min}s - {watch_max}s{RESET}")
         print(f"  Minimum Delay between accounts: {CYAN}{settings['delay_min']} seconds{RESET}")
         print(f"  Maximum Delay between accounts: {CYAN}{settings['delay_max']} seconds{RESET}")
         print(f"  Default Like:    {CYAN}{settings['default_actions']['like']}{RESET}")
@@ -752,6 +765,7 @@ def settings_menu():
         print("  [2] Configure Gemini API Key (AI Comments)")
         print("  [3] Configure Telegram Bot (Remote Control)")
         print("  [4] Change Concurrency (Number of accounts to launch at a time)")
+        print("  [5] Change Watch Time (Seconds to watch video before liking)")
         print("  [0] Back to Main Menu")
 
         choice = input(f"\n{YELLOW}Select an option:{RESET} ").strip()
@@ -802,6 +816,21 @@ def settings_menu():
                     print(f"{RED}[!] Please choose a value between 1 and 20.{RESET}")
             except ValueError:
                 print(f"{RED}[!] Please enter a valid number.{RESET}")
+            time.sleep(1.2)
+
+        elif choice == "5":
+            try:
+                w_min = int(input("Enter minimum seconds to watch before liking (e.g. 5): ").strip())
+                w_max = int(input("Enter maximum seconds to watch before liking (e.g. 15): ").strip())
+                if w_min >= 0 and w_max >= w_min:
+                    settings["watch_time_min"] = w_min
+                    settings["watch_time_max"] = w_max
+                    save_settings(settings)
+                    print(f"{GREEN}[+] Watch time set to {w_min}s - {w_max}s!{RESET}")
+                else:
+                    print(f"{RED}[!] Maximum watch time must be greater than or equal to minimum.{RESET}")
+            except ValueError:
+                print(f"{RED}[!] Please enter valid numbers.{RESET}")
             time.sleep(1.2)
 
         elif choice == "0":

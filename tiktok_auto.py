@@ -326,7 +326,7 @@ async def human_scroll(page):
         pass
 
 
-async def engage_post(account, post_url, do_like=True, do_follow=False, comment_text=None, do_share=False, do_save=False, do_repost=False, min_watch=8, max_watch=15, cdp_port=None):
+async def engage_post(account, post_url, do_like=True, do_follow=False, comment_text=None, do_share=False, do_save=False, do_repost=False, min_watch=None, max_watch=None, cdp_port=None):
 
     account_id = account["id"]
     profile_path = PROFILES_DIR / account_id
@@ -334,6 +334,20 @@ async def engage_post(account, post_url, do_like=True, do_follow=False, comment_
     if not profile_path.exists():
         print(f"[-] Profile for '{account_id}' does not exist yet. Run '--login {account_id}' first.")
         return False
+
+    # Read default watch times from settings if not passed
+    if min_watch is None or max_watch is None:
+        try:
+            settings_path = BASE_DIR / "settings.json"
+            if settings_path.exists():
+                with open(settings_path, "r", encoding="utf-8") as f:
+                    s_data = json.load(f)
+                    min_watch = min_watch if min_watch is not None else s_data.get("watch_time_min", 8)
+                    max_watch = max_watch if max_watch is not None else s_data.get("watch_time_max", 15)
+        except Exception:
+            pass
+    min_watch = min_watch if min_watch is not None else 8
+    max_watch = max_watch if max_watch is not None else 15
 
     # Choose a unique debugging port if not specified
     if cdp_port is None:
@@ -1125,6 +1139,8 @@ async def main():
     parser.add_argument("--share", action="store_true", help="Share the post / copy link")
     parser.add_argument("--save", action="store_true", help="Save / favorite the post")
     parser.add_argument("--repost", action="store_true", help="Repost the video to your profile/followers")
+    parser.add_argument("--watch-min", type=int, default=None, help="Minimum watch time (seconds) before actions (default: from settings or 8)")
+    parser.add_argument("--watch-max", type=int, default=None, help="Maximum watch time (seconds) before actions (default: from settings or 15)")
     parser.add_argument("--delay-min", type=int, default=15, help="Minimum delay (seconds) between accounts (default: 15)")
     parser.add_argument("--delay-max", type=int, default=45, help="Maximum delay (seconds) between accounts (default: 45)")
     parser.add_argument("--accounts", type=str, help="Comma-separated account IDs to use (e.g. 'account_1,account_2'). Default: all")
@@ -1204,7 +1220,9 @@ async def main():
             comment_text=chosen_comment,
             do_share=args.share,
             do_save=args.save,
-            do_repost=args.repost
+            do_repost=args.repost,
+            min_watch=args.watch_min,
+            max_watch=args.watch_max
         )
 
         # Stagger delay before next account to avoid triggering bot detection

@@ -212,6 +212,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         msg = (
             f"⚙️ *Current Settings:*\n\n"
             f"• Concurrent Accounts: *{cfg.get('concurrency', 5)} at a time*\n"
+            f"• Watch Time Before Liking: *{cfg.get('watch_time_min', 8)}s - {cfg.get('watch_time_max', 15)}s*\n"
             f"• Minimum Delay: *{cfg.get('delay_min', 15)}s*\n"
             f"• Maximum Delay: *{cfg.get('delay_max', 45)}s*\n"
             f"• AI Comments: *{'Enabled (Gemini)' if cfg.get('gemini_api_key') else 'Disabled (Preset Fallback)'}*\n"
