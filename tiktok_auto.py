@@ -567,8 +567,56 @@ async def engage_via_live_chrome(post_url, do_like=True, do_follow=False, commen
 
 
 
+async def check_is_liked(page):
+    """
+    Robust check if the currently viewed video is already liked.
+    Inspects aria-pressed, colored/filled SVG path, style/classes, and aria-label.
+    """
+    return await page.evaluate('''() => {
+        // Find potential like button / container elements
+        const candidates = Array.from(document.querySelectorAll(
+            '[data-e2e="like-icon"], [data-e2e="browse-like-icon"], [data-e2e="feed-like"], [aria-label*="Like" i]'
+        ));
+
+        for (const el of candidates) {
+            const btn = el.closest('button') || el;
+            
+            // 1. Check aria-pressed
+            if (btn.getAttribute('aria-pressed') === 'true' || el.getAttribute('aria-pressed') === 'true') {
+                return true;
+            }
+
+            // 2. Check aria-label for 'Unlike' or 'Liked'
+            const label = (btn.getAttribute('aria-label') || el.getAttribute('aria-label') || '').toLowerCase();
+            if (label.includes('unlike') || label.includes('liked') || label.includes('dislike')) {
+                return true;
+            }
+
+            // 3. Check for red/pink filled SVG or active color (TikTok red: rgb(254, 44, 85) or #fe2c55)
+            const svgs = (btn || el).querySelectorAll('svg, path');
+            for (const svg of svgs) {
+                const fill = window.getComputedStyle(svg).fill || svg.getAttribute('fill') || '';
+                const color = window.getComputedStyle(svg).color || '';
+                if (
+                    fill.includes('254, 44, 85') || fill.includes('fe2c55') || fill.includes('red') ||
+                    color.includes('254, 44, 85') || color.includes('fe2c55') || color.includes('red')
+                ) {
+                    return true;
+                }
+            }
+
+            // 4. Check class names for active / pressed states
+            const classNames = (btn.className + ' ' + el.className).toLowerCase();
+            if (classNames.includes('liked') || classNames.includes('active') || classNames.includes('pressed')) {
+                return true;
+            }
+        }
+        return false;
+    }''')
+
+
 async def try_like(page, account_id):
-    """Attempts to click the like button under slow networks, retrying and using keyboard/DOM fallbacks."""
+    """Attempts to click the like button under slow networks, ensuring already-liked videos are NEVER unliked."""
     like_selectors = [
         'span[data-e2e="like-icon"]',
         'button[data-e2e="like-icon"]',
@@ -580,16 +628,38 @@ async def try_like(page, account_id):
         'div[data-e2e="feed-like"]'
     ]
 
-    # Retry loop: On slow networks or when running 5 parallel tabs, the page elements can take up to 12s to render
+    # Pre-check: If already liked, exit immediately without touching anything
+    try:
+        if await check_is_liked(page):
+            print(f"[{account_id}] 💖 Video is ALREADY liked! Skipping to prevent unliking.")
+            return True
+    except Exception:
+        pass
+
+    # Retry loop: On slow networks or when running multiple parallel tabs, the page elements can take up to 12s to render
     for attempt in range(1, 4):
+        # Always re-verify if already liked before any click attempt
+        try:
+            if await check_is_liked(page):
+                print(f"[{account_id}] 💖 Video is ALREADY liked! Skipping to prevent unliking.")
+                return True
+        except Exception:
+            pass
+
         for sel in like_selectors:
             try:
                 btn = page.locator(sel).first
                 if await btn.is_visible(timeout=1500):
-                    # Check if already liked
+                    # Check aria-pressed or label
                     is_pressed = await btn.get_attribute("aria-pressed")
-                    if is_pressed == "true":
-                        print(f"[{account_id}] Video is already liked.")
+                    btn_label = (await btn.get_attribute("aria-label") or "").lower()
+                    if is_pressed == "true" or "unlike" in btn_label or "liked" in btn_label:
+                        print(f"[{account_id}] 💖 Video is ALREADY liked! Skipping to prevent unliking.")
+                        return True
+
+                    # Double check through DOM inspector before clicking
+                    if await check_is_liked(page):
+                        print(f"[{account_id}] 💖 Video is ALREADY liked! Skipping to prevent unliking.")
                         return True
 
                     await btn.scroll_into_view_if_needed()
@@ -598,25 +668,49 @@ async def try_like(page, account_id):
                     await btn.click(force=True)
                     print(f"[{account_id}] ❤️ Clicked like button! Waiting for confirmation...")
                     await asyncio.sleep(random.uniform(2.0, 3.5))
+
+                    # Post-click verification: Ensure it is now in liked state
+                    if await check_is_liked(page):
+                        print(f"[{account_id}] ✅ Verified: Post is now liked.")
                     return True
             except Exception:
                 pass
 
-        # Try DOM JavaScript evaluation on this attempt
+        # Try DOM JavaScript evaluation on this attempt, ensuring it does NOT click if already liked
         try:
             liked_js = await page.evaluate('''() => {
                 const el = document.querySelector('[data-e2e="like-icon"]') || 
                            document.querySelector('[data-e2e="browse-like-icon"]') ||
                            document.querySelector('[aria-label*="Like" i]');
                 if (el) {
+                    const btn = el.closest('button') || el;
+                    const pressed = btn.getAttribute('aria-pressed') === 'true' || el.getAttribute('aria-pressed') === 'true';
+                    const label = (btn.getAttribute('aria-label') || el.getAttribute('aria-label') || '').toLowerCase();
+                    if (pressed || label.includes('unlike') || label.includes('liked')) {
+                        return "already_liked";
+                    }
+
+                    // Check SVG fill color
+                    const svg = (btn || el).querySelector('svg, path');
+                    if (svg) {
+                        const fill = window.getComputedStyle(svg).fill || svg.getAttribute('fill') || '';
+                        if (fill.includes('254, 44, 85') || fill.includes('fe2c55') || fill.includes('red')) {
+                            return "already_liked";
+                        }
+                    }
+
                     el.click();
                     const parent = el.closest('button') || el.parentElement;
                     if (parent) parent.click();
-                    return true;
+                    return "clicked";
                 }
-                return false;
+                return "not_found";
             }''')
-            if liked_js:
+
+            if liked_js == "already_liked":
+                print(f"[{account_id}] 💖 Video is ALREADY liked! Skipping to prevent unliking.")
+                return True
+            elif liked_js == "clicked":
                 print(f"[{account_id}] ❤️ Liked post via DOM trigger!")
                 await asyncio.sleep(2.5)
                 return True
@@ -628,10 +722,17 @@ async def try_like(page, account_id):
             print(f"[{account_id}] ⏳ Slow network: Waiting for video actions to render (retry {attempt}/3)...")
             await asyncio.sleep(2.5)
 
-    # Final Fallback for TikTok Desktop: The global keyboard shortcut 'L' or double-click to like
+    # Before attempting shortcut 'L', do a final strict check to make sure it's not already liked!
+    try:
+        if await check_is_liked(page):
+            print(f"[{account_id}] 💖 Video is ALREADY liked! Skipping keyboard shortcut to prevent unliking.")
+            return True
+    except Exception:
+        pass
+
+    # Final Fallback for TikTok Desktop: The global keyboard shortcut 'L' (only if confirmed NOT liked)
     try:
         print(f"[{account_id}] 🔄 Using TikTok desktop shortcut key 'L' to like...")
-        # Click video area to ensure focus
         video_area = page.locator('video, div[class*="DivVideoContainer"]').first
         if await video_area.is_visible():
             await video_area.click()
