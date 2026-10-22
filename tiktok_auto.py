@@ -24,6 +24,14 @@ from playwright_stealth import Stealth
 
 stealth_handler = Stealth()
 
+# ANSI color codes
+CYAN = "\033[96m"
+GREEN = "\033[92m"
+YELLOW = "\033[93m"
+RED = "\033[91m"
+BOLD = "\033[1m"
+RESET = "\033[0m"
+
 
 BASE_DIR = Path(__file__).resolve().parent
 PROFILES_DIR = BASE_DIR / "profiles"
@@ -49,13 +57,63 @@ def get_chrome_path():
             return p
     return r"C:\Program Files\Google\Chrome\Application\chrome.exe"
 
-def load_proxies():
-    """Reads proxies.txt and returns a cleaned list of proxy strings."""
-    if not PROXIES_FILE.exists():
-        return []
-    with open(PROXIES_FILE, "r", encoding="utf-8") as f:
-        proxies = [line.strip() for line in f if line.strip() and not line.startswith("#")]
-    return proxies
+def mark_account_session_expired(account_id):
+    """
+    Marks an account as not logged in by clearing invalid/expired TikTok session cookies
+    from its Chrome profile SQLite database so health checks recognize it as 'Needs Login'.
+    """
+    profile_path = PROFILES_DIR / account_id
+    cookie_file = profile_path / "Default" / "Network" / "Cookies"
+    if cookie_file.exists():
+        try:
+            import sqlite3
+            conn = sqlite3.connect(str(cookie_file))
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM cookies WHERE host_key LIKE '%tiktok.com%' AND (name LIKE '%sessionid%' OR name LIKE '%sid_guard%' OR name LIKE '%uid_tt%')")
+            conn.commit()
+            conn.close()
+        except Exception:
+            pass
+
+
+async def check_session_validity(page):
+    """
+    Inspects whether the active TikTok page is in a logged-in state or if the session has expired.
+    Returns:
+        False if explicitly logged out / session expired.
+        True if logged in.
+    """
+    return await page.evaluate('''() => {
+        // 1. Check for prominent 'Log in' buttons
+        const loginBtn = document.querySelector('button[data-e2e="nav-login-button"], button[data-e2e="top-login-button"], a[data-e2e="nav-login-button"]');
+        if (loginBtn && loginBtn.offsetParent !== null) {
+            return false;
+        }
+
+        // 2. Check for login modal or login popup
+        const loginModal = document.querySelector('div[class*="DivLoginContainer"], div[class*="modal-login"], div[id="loginContainer"]');
+        if (loginModal && loginModal.offsetParent !== null) {
+            return false;
+        }
+
+        // 3. Check for presence of user profile avatar or inbox icon (indicates active login)
+        const profileAvatar = document.querySelector('span[data-e2e="profile-icon"], img[data-e2e="profile-icon"], a[data-e2e="nav-profile"]');
+        if (profileAvatar) {
+            return true;
+        }
+
+        // 4. Check for 'Log in to TikTok' heading
+        const allHeadings = Array.from(document.querySelectorAll('h1, h2, h3, p'));
+        for (const h of allHeadings) {
+            const txt = (h.textContent || '').trim().toLowerCase();
+            if (txt === 'log in to tiktok' && h.offsetParent !== null) {
+                return false;
+            }
+        }
+
+        return true;
+    }''')
+
 
 def get_random_proxy():
     """Selects a random proxy from proxies.txt if available."""
@@ -430,6 +488,17 @@ async def engage_post(account, post_url, do_like=True, do_follow=False, comment_
                             print(f"[+] CAPTCHA solved! Resuming engagement...\n")
                             await asyncio.sleep(2.0)
                             break
+            except Exception:
+                pass
+
+            # Detect expired session or invalidated cookies
+            try:
+                is_logged_in = await check_session_validity(page)
+                if not is_logged_in:
+                    print(f"\n{RED}[⚠️ SESSION EXPIRED] Account '{account_id}' session has expired or cookies were invalidated!{RESET}")
+                    print(f"{YELLOW}[!] Automatically marking '{account_id}' as 'Needs Login' and clearing stale session...{RESET}")
+                    mark_account_session_expired(account_id)
+                    return False
             except Exception:
                 pass
 
@@ -1081,8 +1150,10 @@ async def try_comment(page, account_id, text):
     if not inp:
         print(f"[{account_id}] ⚠️ Comment input box not found. Checking if comments are turned off or if login session expired...")
         # Check if login prompt modal is showing
-        if await page.locator('text="Log in to TikTok"').first.is_visible():
-            print(f"[{account_id}] ⚠️ TikTok prompted for login. Session needs refresh with --login {account_id}.")
+        if await page.locator('text="Log in to TikTok"').first.is_visible() or not await check_session_validity(page):
+            print(f"\n{RED}[⚠️ SESSION EXPIRED] Account '{account_id}' session has expired during comment action!{RESET}")
+            print(f"{YELLOW}[!] Automatically marking '{account_id}' as 'Needs Login' and clearing stale session...{RESET}")
+            mark_account_session_expired(account_id)
         return
 
     # Focus and type comment

@@ -30,6 +30,23 @@ PROFILES_DIR = BASE_DIR / "profiles"
 USER_STATES = {}
 
 
+def is_account_logged_in(account_id):
+    """Checks if an account profile actually contains a logged-in TikTok session cookie."""
+    cookie_file = PROFILES_DIR / account_id / "Default" / "Network" / "Cookies"
+    if not cookie_file.exists():
+        return False
+    try:
+        import sqlite3
+        conn = sqlite3.connect(str(cookie_file))
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM cookies WHERE host_key LIKE '%tiktok.com%'")
+        names = [r[0] for r in cursor.fetchall()]
+        conn.close()
+        return any("sessionid" in n.lower() or "sid_guard" in n.lower() or "uid_tt" in n.lower() for n in names)
+    except Exception:
+        return (PROFILES_DIR / account_id).exists()
+
+
 def get_config():
     if not SETTINGS_FILE.exists():
         return {}
@@ -153,15 +170,15 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if ACCOUNTS_FILE.exists():
             with open(ACCOUNTS_FILE, "r", encoding="utf-8") as f:
                 accounts = json.load(f)
-        ready = sum(1 for a in accounts if (PROFILES_DIR / a['id']).exists())
+        ready = sum(1 for a in accounts if is_account_logged_in(a['id']))
         status_msg = (
             f"📊 *Accounts Dashboard:*\n\n"
             f"• Total Accounts in file: *{len(accounts)}*\n"
             f"• Logged In & Ready: *{ready}*\n"
-            f"• Pending Login: *{len(accounts) - ready}*\n\n"
+            f"• Pending / Expired Login: *{len(accounts) - ready}*\n\n"
         )
         for i, a in enumerate(accounts[:10], 1):
-            is_ready = (PROFILES_DIR / a['id']).exists()
+            is_ready = is_account_logged_in(a['id'])
             icon = "✅" if is_ready else "⚠️"
             status_msg += f"{icon} `{a['id']}` - {a.get('name', 'N/A')}\n"
 
@@ -290,7 +307,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def run_engagement_pipeline(chat_id: int, context: ContextTypes.DEFAULT_TYPE, urls: list[str], action_type: str):
     from tiktok_auto import load_accounts, engage_post
     accounts = load_accounts()
-    active_accounts = [a for a in accounts if (PROFILES_DIR / a['id']).exists()]
+    active_accounts = [a for a in accounts if is_account_logged_in(a['id'])]
 
     if not active_accounts:
         await context.bot.send_message(chat_id=chat_id, text="❌ No logged-in accounts found. Please log in via `motion.bat` first.", parse_mode="Markdown")
@@ -367,7 +384,7 @@ async def run_engagement_pipeline(chat_id: int, context: ContextTypes.DEFAULT_TY
 async def run_warmup_pipeline(chat_id: int, context: ContextTypes.DEFAULT_TYPE, duration_mins: int):
     from tiktok_auto import load_accounts, warmup_account
     accounts = load_accounts()
-    active_accounts = [a for a in accounts if (PROFILES_DIR / a['id']).exists()]
+    active_accounts = [a for a in accounts if is_account_logged_in(a['id'])]
 
     if not active_accounts:
         await context.bot.send_message(chat_id=chat_id, text="❌ No logged-in accounts found.", parse_mode="Markdown")

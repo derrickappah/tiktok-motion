@@ -204,7 +204,7 @@ def run_engagement_menu():
     print(f"\n{BOLD}Select accounts to run:{RESET}")
     print("  [A] All accounts")
     for i, acc in enumerate(accounts, 1):
-        status = "✅ Ready" if (PROFILES_DIR / acc['id']).exists() else "⚠️ Not logged in"
+        status = "✅ Ready" if is_account_logged_in(acc['id']) else "⚠️ Not logged in"
         print(f"  [{i}] {acc['id']} ({acc.get('name', 'N/A')}) - {status}")
 
     acc_choice = input(f"\n{YELLOW}Choose accounts (e.g. 'A' or '1,2,3'):{RESET} ").strip().upper()
@@ -361,7 +361,7 @@ def run_single_action_flow(action_type):
     print(f"\n{BOLD}Select accounts to run:{RESET}")
     print("  [A] All accounts")
     for i, acc in enumerate(accounts, 1):
-        status = "✅ Ready" if (PROFILES_DIR / acc['id']).exists() else "⚠️ Not logged in"
+        status = "✅ Ready" if is_account_logged_in(acc['id']) else "⚠️ Not logged in"
         print(f"  [{i}] {acc['id']} ({acc.get('name', 'N/A')}) - {status}")
 
     acc_choice = input(f"\n{YELLOW}Choose accounts (e.g. 'A' or '1,2,3'):{RESET} ").strip().upper()
@@ -854,7 +854,7 @@ def run_warmup_flow():
     print(f"{BOLD}Select accounts to warm up:{RESET}")
     print("  [A] All accounts")
     for i, acc in enumerate(accounts, 1):
-        status = "✅ Ready" if (PROFILES_DIR / acc['id']).exists() else "⚠️ Not logged in"
+        status = "✅ Ready" if is_account_logged_in(acc['id']) else "⚠️ Not logged in"
         print(f"  [{i}] {acc['id']} - {status}")
 
     choice = input(f"\n{YELLOW}Choose accounts (e.g. 'A' or '1'):{RESET} ").strip().upper()
