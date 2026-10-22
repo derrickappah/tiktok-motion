@@ -57,6 +57,14 @@ def get_chrome_path():
             return p
     return r"C:\Program Files\Google\Chrome\Application\chrome.exe"
 
+def load_proxies():
+    """Reads proxies.txt and returns a cleaned list of proxy strings."""
+    if not PROXIES_FILE.exists():
+        return []
+    with open(PROXIES_FILE, "r", encoding="utf-8") as f:
+        proxies = [line.strip() for line in f if line.strip() and not line.startswith("#")]
+    return proxies
+
 def mark_account_session_expired(account_id):
     """
     Marks an account as not logged in by clearing invalid/expired TikTok session cookies
