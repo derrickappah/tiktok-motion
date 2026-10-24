@@ -137,42 +137,104 @@ async def get_post_metrics(page):
             shares: null
         };
 
-        const getText = (selector) => {
-            const el = document.querySelector(selector);
-            return el ? el.innerText.trim() : null;
+        const cleanVal = (val) => {
+            if (!val) return null;
+            val = val.trim();
+            // Ignore placeholders or labels like 'Like', 'Share', 'Comment'
+            if (/^(like|comment|favorite|save|share|bookmark|repost)$/i.test(val)) return null;
+            // Valid if contains digits (e.g. '0', '1', '1.2K', '3.4M', '45')
+            if (/\\d/.test(val)) return val;
+            return null;
         };
 
-        // Likes count
-        metrics.likes = getText('[data-e2e="like-count"]') ||
-                        getText('strong[data-e2e="browse-like-count"]') ||
-                        getText('[data-e2e="visual-search-like-count"]');
+        // Strategy 1: Dedicated data-e2e attributes
+        const directSelectors = {
+            likes: ['[data-e2e="like-count"]', 'strong[data-e2e="browse-like-count"]', '[data-e2e="visual-search-like-count"]'],
+            comments: ['[data-e2e="comment-count"]', 'strong[data-e2e="browse-comment-count"]'],
+            saves: ['[data-e2e="undefined-count"]', '[data-e2e="favorite-count"]', 'strong[data-e2e="undefined-count"]'],
+            shares: ['[data-e2e="share-count"]', 'strong[data-e2e="share-count"]']
+        };
 
-        // Comments count
-        metrics.comments = getText('[data-e2e="comment-count"]') ||
-                           getText('strong[data-e2e="browse-comment-count"]');
-
-        // Saves / Favorites count
-        metrics.saves = getText('[data-e2e="undefined-count"]') ||
-                        getText('[data-e2e="favorite-count"]') ||
-                        getText('strong[data-e2e="undefined-count"]');
-
-        // Shares count
-        metrics.shares = getText('[data-e2e="share-count"]') ||
-                         getText('strong[data-e2e="share-count"]');
-
-        // Fallback: search buttons and strong/span text inside action bar
-        if (!metrics.likes || !metrics.comments) {
-            const strongs = Array.from(document.querySelectorAll('strong[class*="Count"], span[class*="Count"]'));
-            strongs.forEach(s => {
-                const parent = s.closest('button') || s.parentElement;
-                if (!parent) return;
-                const pText = (parent.getAttribute('aria-label') || parent.getAttribute('data-e2e') || '').toLowerCase();
-                if (pText.includes('like') && !metrics.likes) metrics.likes = s.innerText.trim();
-                else if (pText.includes('comment') && !metrics.comments) metrics.comments = s.innerText.trim();
-                else if ((pText.includes('favorite') || pText.includes('save') || pText.includes('bookmark')) && !metrics.saves) metrics.saves = s.innerText.trim();
-                else if (pText.includes('share') && !metrics.shares) metrics.shares = s.innerText.trim();
-            });
+        for (const [key, selList] of Object.entries(directSelectors)) {
+            for (const sel of selList) {
+                const el = document.querySelector(sel);
+                if (el) {
+                    const text = cleanVal(el.innerText || el.textContent);
+                    if (text) {
+                        metrics[key] = text;
+                        break;
+                    }
+                }
+            }
         }
+
+        // Strategy 2: Button / Icon sibling text and action container search
+        const actionIcons = [
+            { key: 'likes', selectors: ['[data-e2e="like-icon"]', '[data-e2e="browse-like-icon"]', '[aria-label*="Like" i]'] },
+            { key: 'comments', selectors: ['[data-e2e="comment-icon"]', '[data-e2e="browse-comment-icon"]', '[aria-label*="Comment" i]'] },
+            { key: 'saves', selectors: ['[data-e2e="undefined-icon"]', '[data-e2e="favorite-icon"]', '[aria-label*="Favorite" i]', '[aria-label*="Save" i]'] },
+            { key: 'shares', selectors: ['[data-e2e="share-icon"]', '[data-e2e="share-btn"]', '[aria-label*="Share" i]'] }
+        ];
+
+        for (const item of actionIcons) {
+            if (metrics[item.key]) continue;
+            for (const sel of item.selectors) {
+                const icon = document.querySelector(sel);
+                if (!icon) continue;
+
+                const parent = icon.closest('button') || icon.closest('div[role="button"]') || icon.parentElement;
+                if (!parent) continue;
+
+                // Check text directly inside or sibling elements (e.g. strong, span, p)
+                const candidates = Array.from(parent.querySelectorAll('strong, span, p, div')).concat([parent]);
+                for (const c of candidates) {
+                    if (c === icon) continue;
+                    const val = cleanVal(c.innerText || c.textContent);
+                    if (val) {
+                        metrics[item.key] = val;
+                        break;
+                    }
+                }
+                if (metrics[item.key]) break;
+            }
+        }
+
+        // Strategy 3: Inspect aria-labels on action buttons (e.g., '14.2K likes', '230 comments')
+        const allButtons = Array.from(document.querySelectorAll('button, div[role="button"]'));
+        for (const btn of allButtons) {
+            const aria = (btn.getAttribute('aria-label') || '').trim();
+            if (!aria) continue;
+
+            // Pattern: "<digits>[K|M]? likes" or "Like video. <digits>[K|M] likes"
+            const likeMatch = aria.match(/([0-9]+[0-9.,]*[KMBkmb]?)\\s*likes?/i);
+            if (likeMatch && !metrics.likes) metrics.likes = cleanVal(likeMatch[1]);
+
+            const commentMatch = aria.match(/([0-9]+[0-9.,]*[KMBkmb]?)\\s*comments?/i);
+            if (commentMatch && !metrics.comments) metrics.comments = cleanVal(commentMatch[1]);
+
+            const saveMatch = aria.match(/([0-9]+[0-9.,]*[KMBkmb]?)\\s*(favorites?|saves?|bookmarks?)/i);
+            if (saveMatch && !metrics.saves) metrics.saves = cleanVal(saveMatch[1]);
+
+            const shareMatch = aria.match(/([0-9]+[0-9.,]*[KMBkmb]?)\\s*shares?/i);
+            if (shareMatch && !metrics.shares) metrics.shares = cleanVal(shareMatch[1]);
+        }
+
+        // Strategy 4: Fallback to __UNIVERSAL_DATA_FOR_REHYDRATION__ or SIGI_STATE in DOM
+        try {
+            const nextDataScript = document.getElementById('__UNIVERSAL_DATA_FOR_REHYDRATION__') || document.getElementById('SIGI_STATE');
+            if (nextDataScript) {
+                const parsed = JSON.parse(nextDataScript.textContent || '{}');
+                const defaultScope = parsed['__DEFAULT_SCOPE__'] || parsed;
+                const itemDetail = defaultScope['webapp.video-detail']?.itemInfo?.itemStruct || defaultScope.itemInfo?.itemStruct;
+                if (itemDetail && itemDetail.stats) {
+                    const stats = itemDetail.stats;
+                    if (!metrics.likes && stats.diggCount !== undefined) metrics.likes = String(stats.diggCount);
+                    if (!metrics.comments && stats.commentCount !== undefined) metrics.comments = String(stats.commentCount);
+                    if (!metrics.saves && stats.collectCount !== undefined) metrics.saves = String(stats.collectCount);
+                    if (!metrics.shares && stats.shareCount !== undefined) metrics.shares = String(stats.shareCount);
+                }
+            }
+        } catch (e) {}
 
         return metrics;
     }''')
@@ -572,7 +634,13 @@ async def engage_post(account, post_url, do_like=True, do_follow=False, comment_
             except Exception:
                 pass
 
-            # Capture initial/start count if requested
+            # Simulate initial video watch time (crucial for anti-detection)
+            watch_seconds = random.uniform(min_watch, max_watch)
+            print(f"[{account_id}] Watching video for {watch_seconds:.1f}s (simulating human viewer)...")
+            await asyncio.sleep(watch_seconds)
+            await human_scroll(page)
+
+            # Capture initial/start count if requested (done after initial video watch/settle)
             if return_metrics:
                 try:
                     result_payload["start_metrics"] = await get_post_metrics(page)
@@ -581,12 +649,6 @@ async def engage_post(account, post_url, do_like=True, do_follow=False, comment_
                         print(f"[{account_id}] 📊 Initial Counts: Likes={m.get('likes') or 'N/A'} | Comments={m.get('comments') or 'N/A'} | Saves={m.get('saves') or 'N/A'} | Shares={m.get('shares') or 'N/A'}")
                 except Exception:
                     pass
-
-            # Simulate initial video watch time (crucial for anti-detection)
-            watch_seconds = random.uniform(min_watch, max_watch)
-            print(f"[{account_id}] Watching video for {watch_seconds:.1f}s (simulating human viewer)...")
-            await asyncio.sleep(watch_seconds)
-            await human_scroll(page)
 
             # 1. LIKE (Wait for action to complete and verify)
             if do_like:
