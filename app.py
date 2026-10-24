@@ -313,8 +313,44 @@ def run_engagement_menu():
                     )
                     return res
 
-            tasks = [run_single_acc(acc, idx) for idx, acc in enumerate(exec_accounts)]
+            tasks = [run_single_acc(acc, idx) for idx, acc in enumerate(exec_accounts[:-1])]
             await asyncio.gather(*tasks)
+
+            # Last account runs with metric tracking (start count vs end count)
+            last_acc = exec_accounts[-1]
+            last_idx = len(exec_accounts) - 1
+            print(f"\n{BOLD}[Video {u_idx}/{len(urls)} | Acc {last_idx+1}/{len(exec_accounts)}] 🚀 Launching LAST account {last_acc['id']} (Tracking Start & End Counts)...{RESET}")
+            comment_text = comment_choice
+            if comment_choice == "random":
+                comment_text = random.choice(load_comments())
+
+            last_result = await engage_post(
+                account=last_acc,
+                post_url=post_url,
+                do_like=do_like,
+                do_follow=do_follow,
+                comment_text=comment_text if do_comment else None,
+                do_share=do_share,
+                do_save=do_save,
+                do_repost=do_repost,
+                min_watch=watch_min,
+                max_watch=watch_max,
+                return_metrics=True
+            )
+
+            # Display Engagement Metric Shift Report
+            if isinstance(last_result, dict):
+                start_m = last_result.get("start_metrics") or {}
+                end_m = last_result.get("end_metrics") or {}
+                print(f"\n{CYAN}========================================================")
+                print(f"  📊 VIDEO METRIC SHIFT REPORT [Video {u_idx}/{len(urls)}]")
+                print(f"  Target: {post_url}")
+                print(f"  ────────────────────────────────────────────────────────")
+                print(f"  ❤️ Likes:     {start_m.get('likes') or 'N/A'}  ➡️  {GREEN}{end_m.get('likes') or 'N/A'}{RESET}")
+                print(f"  💬 Comments:  {start_m.get('comments') or 'N/A'}  ➡️  {GREEN}{end_m.get('comments') or 'N/A'}{RESET}")
+                print(f"  🔖 Saves:     {start_m.get('saves') or 'N/A'}  ➡️  {GREEN}{end_m.get('saves') or 'N/A'}{RESET}")
+                print(f"  🔄 Shares:    {start_m.get('shares') or 'N/A'}  ➡️  {GREEN}{end_m.get('shares') or 'N/A'}{RESET}")
+                print(f"========================================================{RESET}\n")
 
             if u_idx < len(urls):
                 print(f"\n{CYAN}[⏸️] Completed video {u_idx}. Waiting 5s before starting next video in queue...{RESET}")
@@ -454,8 +490,44 @@ def run_single_action_flow(action_type):
                     )
                     return res
 
-            tasks = [run_single_acc(acc, idx) for idx, acc in enumerate(exec_accounts)]
+            tasks = [run_single_acc(acc, idx) for idx, acc in enumerate(exec_accounts[:-1])]
             await asyncio.gather(*tasks)
+
+            # Last account runs with metric tracking (start count vs end count)
+            last_acc = exec_accounts[-1]
+            last_idx = len(exec_accounts) - 1
+            print(f"\n{BOLD}[Video {u_idx}/{len(urls)} | Acc {last_idx+1}/{len(exec_accounts)}] 🚀 Launching LAST account {last_acc['id']} (Tracking Start & End Counts)...{RESET}")
+            c_text = None
+            if action_type == "comment":
+                c_text = random.choice(load_comments()) if comment_choice == "random" else comment_choice
+
+            last_result = await engage_post(
+                account=last_acc,
+                post_url=post_url,
+                do_like=(action_type == "like"),
+                do_follow=(action_type == "follow"),
+                comment_text=c_text,
+                do_share=(action_type == "share"),
+                do_save=(action_type == "save"),
+                do_repost=(action_type == "repost"),
+                min_watch=watch_min,
+                max_watch=watch_max,
+                return_metrics=True
+            )
+
+            # Display Engagement Metric Shift Report
+            if isinstance(last_result, dict):
+                start_m = last_result.get("start_metrics") or {}
+                end_m = last_result.get("end_metrics") or {}
+                print(f"\n{CYAN}========================================================")
+                print(f"  📊 VIDEO METRIC SHIFT REPORT [Video {u_idx}/{len(urls)}]")
+                print(f"  Target: {post_url}")
+                print(f"  ────────────────────────────────────────────────────────")
+                print(f"  ❤️ Likes:     {start_m.get('likes') or 'N/A'}  ➡️  {GREEN}{end_m.get('likes') or 'N/A'}{RESET}")
+                print(f"  💬 Comments:  {start_m.get('comments') or 'N/A'}  ➡️  {GREEN}{end_m.get('comments') or 'N/A'}{RESET}")
+                print(f"  🔖 Saves:     {start_m.get('saves') or 'N/A'}  ➡️  {GREEN}{end_m.get('saves') or 'N/A'}{RESET}")
+                print(f"  🔄 Shares:    {start_m.get('shares') or 'N/A'}  ➡️  {GREEN}{end_m.get('shares') or 'N/A'}{RESET}")
+                print(f"========================================================{RESET}\n")
 
             if u_idx < len(urls):
                 print(f"\n{CYAN}[⏸️] Completed video {u_idx}. Waiting 5s before next video in queue...{RESET}")

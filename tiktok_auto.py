@@ -123,6 +123,62 @@ async def check_session_validity(page):
     }''')
 
 
+async def get_post_metrics(page):
+    """
+    Extracts visible engagement counters from the TikTok video player page:
+    Likes, Comments, Saves/Bookmarks, Shares.
+    Returns a dict, e.g. {'likes': '1.2K', 'comments': '45', 'saves': '120', 'shares': '15'}
+    """
+    return await page.evaluate('''() => {
+        const metrics = {
+            likes: null,
+            comments: null,
+            saves: null,
+            shares: null
+        };
+
+        const getText = (selector) => {
+            const el = document.querySelector(selector);
+            return el ? el.innerText.trim() : null;
+        };
+
+        // Likes count
+        metrics.likes = getText('[data-e2e="like-count"]') ||
+                        getText('strong[data-e2e="browse-like-count"]') ||
+                        getText('[data-e2e="visual-search-like-count"]');
+
+        // Comments count
+        metrics.comments = getText('[data-e2e="comment-count"]') ||
+                           getText('strong[data-e2e="browse-comment-count"]');
+
+        // Saves / Favorites count
+        metrics.saves = getText('[data-e2e="undefined-count"]') ||
+                        getText('[data-e2e="favorite-count"]') ||
+                        getText('strong[data-e2e="undefined-count"]');
+
+        // Shares count
+        metrics.shares = getText('[data-e2e="share-count"]') ||
+                         getText('strong[data-e2e="share-count"]');
+
+        // Fallback: search buttons and strong/span text inside action bar
+        if (!metrics.likes || !metrics.comments) {
+            const strongs = Array.from(document.querySelectorAll('strong[class*="Count"], span[class*="Count"]'));
+            strongs.forEach(s => {
+                const parent = s.closest('button') || s.parentElement;
+                if (!parent) return;
+                const pText = (parent.getAttribute('aria-label') || parent.getAttribute('data-e2e') || '').toLowerCase();
+                if (pText.includes('like') && !metrics.likes) metrics.likes = s.innerText.trim();
+                else if (pText.includes('comment') && !metrics.comments) metrics.comments = s.innerText.trim();
+                else if ((pText.includes('favorite') || pText.includes('save') || pText.includes('bookmark')) && !metrics.saves) metrics.saves = s.innerText.trim();
+                else if (pText.includes('share') && !metrics.shares) metrics.shares = s.innerText.trim();
+            });
+        }
+
+        return metrics;
+    }''')
+
+
+
 def get_random_proxy():
     """Selects a random proxy from proxies.txt if available."""
     pool = load_proxies()
@@ -189,7 +245,7 @@ async def warmup_account(account, minutes=3):
 
     if not profile_path.exists():
         print(f"[-] Profile for '{account_id}' does not exist yet. Run '--login {account_id}' first.")
-        return False
+        return result_payload if return_metrics else False
 
     import subprocess
     chrome_exe = get_chrome_path()
@@ -392,14 +448,20 @@ async def human_scroll(page):
         pass
 
 
-async def engage_post(account, post_url, do_like=True, do_follow=False, comment_text=None, do_share=False, do_save=False, do_repost=False, min_watch=None, max_watch=None, cdp_port=None):
+async def engage_post(account, post_url, do_like=True, do_follow=False, comment_text=None, do_share=False, do_save=False, do_repost=False, min_watch=None, max_watch=None, cdp_port=None, return_metrics=False):
 
     account_id = account["id"]
     profile_path = PROFILES_DIR / account_id
 
+    result_payload = {
+        "success": False,
+        "start_metrics": None,
+        "end_metrics": None
+    }
+
     if not profile_path.exists():
         print(f"[-] Profile for '{account_id}' does not exist yet. Run '--login {account_id}' first.")
-        return False
+        return result_payload if return_metrics else False
 
     # Read default watch times from settings if not passed
     if min_watch is None or max_watch is None:
@@ -439,7 +501,7 @@ async def engage_post(account, post_url, do_like=True, do_follow=False, comment_
     chrome_exe = get_chrome_path()
     if not os.path.exists(chrome_exe):
         print(f"[!] Google Chrome executable not found at: {chrome_exe}")
-        return False
+        return result_payload if return_metrics else False
 
     # Launch real Google Chrome with this specific account profile and proxy
     cmd = [
@@ -465,7 +527,7 @@ async def engage_post(account, post_url, do_like=True, do_follow=False, comment_
                         proc.terminate()
                     except Exception:
                         pass
-                    return False
+                    return result_payload if return_metrics else False
                 await asyncio.sleep(1.2)
 
         context = browser.contexts[0] if browser.contexts else await browser.new_context()
@@ -506,9 +568,19 @@ async def engage_post(account, post_url, do_like=True, do_follow=False, comment_
                     print(f"\n{RED}[⚠️ SESSION EXPIRED] Account '{account_id}' session has expired or cookies were invalidated!{RESET}")
                     print(f"{YELLOW}[!] Automatically marking '{account_id}' as 'Needs Login' and clearing stale session...{RESET}")
                     mark_account_session_expired(account_id)
-                    return False
+                    return result_payload if return_metrics else False
             except Exception:
                 pass
+
+            # Capture initial/start count if requested
+            if return_metrics:
+                try:
+                    result_payload["start_metrics"] = await get_post_metrics(page)
+                    m = result_payload["start_metrics"]
+                    if m:
+                        print(f"[{account_id}] 📊 Initial Counts: Likes={m.get('likes') or 'N/A'} | Comments={m.get('comments') or 'N/A'} | Saves={m.get('saves') or 'N/A'} | Shares={m.get('shares') or 'N/A'}")
+                except Exception:
+                    pass
 
             # Simulate initial video watch time (crucial for anti-detection)
             watch_seconds = random.uniform(min_watch, max_watch)
@@ -556,12 +628,24 @@ async def engage_post(account, post_url, do_like=True, do_follow=False, comment_
             print(f"[{account_id}] ⏳ Waiting for actions to fully sync and persist with TikTok servers...")
             await asyncio.sleep(random.uniform(5.0, 7.0))
 
+            # Capture final/end count if requested
+            if return_metrics:
+                try:
+                    result_payload["end_metrics"] = await get_post_metrics(page)
+                    m = result_payload["end_metrics"]
+                    if m:
+                        print(f"[{account_id}] 📊 Final Counts: Likes={m.get('likes') or 'N/A'} | Comments={m.get('comments') or 'N/A'} | Saves={m.get('saves') or 'N/A'} | Shares={m.get('shares') or 'N/A'}")
+                except Exception:
+                    pass
+
             print(f"[{account_id}] ✅ Completed actions successfully.")
-            return True
+            result_payload["success"] = True
+            return result_payload if return_metrics else True
 
         except Exception as e:
             print(f"[{account_id}] ❌ Error during engagement: {e}")
-            return False
+            result_payload["success"] = False
+            return result_payload if return_metrics else False
         finally:
             # Settle and flush storage/cookies cleanly
             await asyncio.sleep(1.0)

@@ -364,7 +364,46 @@ async def run_engagement_pipeline(chat_id: int, context: ContextTypes.DEFAULT_TY
                 )
                 return res
 
-        results = await asyncio.gather(*[run_acc(acc, i) for i, acc in enumerate(exec_accounts)])
+        # Run all accounts except the last concurrently
+        results = []
+        if len(exec_accounts) > 1:
+            prev_results = await asyncio.gather(*[run_acc(acc, i) for i, acc in enumerate(exec_accounts[:-1])])
+            results.extend(prev_results)
+
+        # Last account runs with start/end count metric tracking
+        last_acc = exec_accounts[-1]
+        last_idx = len(exec_accounts) - 1
+        await safe_send_message(f"🚀 [Vid {u_idx}/{total_urls} | Acc {last_idx+1}/{total_accs}] Starting LAST `{last_acc['id']}` (Capturing Count Shifts)...")
+        last_res = await engage_post(
+            account=last_acc,
+            post_url=current_url,
+            do_like=do_like,
+            do_follow=do_follow,
+            comment_text=comment_text,
+            do_share=do_share,
+            do_save=do_save,
+            do_repost=do_repost,
+            return_metrics=True
+        )
+
+        last_success = False
+        if isinstance(last_res, dict):
+            last_success = last_res.get("success", False)
+            start_m = last_res.get("start_metrics") or {}
+            end_m = last_res.get("end_metrics") or {}
+            metric_report = (
+                f"📊 *VIDEO METRICS REPORT [Vid {u_idx}/{total_urls}]*\n"
+                f"`{current_url}`\n\n"
+                f"• ❤️ Likes: *{start_m.get('likes') or 'N/A'}* ➡️ *{end_m.get('likes') or 'N/A'}*\n"
+                f"• 💬 Comments: *{start_m.get('comments') or 'N/A'}* ➡️ *{end_m.get('comments') or 'N/A'}*\n"
+                f"• 🔖 Saves: *{start_m.get('saves') or 'N/A'}* ➡️ *{end_m.get('saves') or 'N/A'}*\n"
+                f"• 🔄 Shares: *{start_m.get('shares') or 'N/A'}* ➡️ *{end_m.get('shares') or 'N/A'}*"
+            )
+            await safe_send_message(metric_report)
+        else:
+            last_success = bool(last_res)
+
+        results.append(last_success)
         success_count = sum(1 for r in results if r)
 
         if u_idx < total_urls:
