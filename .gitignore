@@ -6,8 +6,9 @@ __pycache__/
 profiles/
 chrome_profile/
 
-# API keys and personal tokens
+# API keys, personal tokens, and engagement history
 settings.json
+engaged_videos.json
 
 # Temporary screenshots & debug logs
 *.png

@@ -17,6 +17,9 @@ import time
 import random
 import asyncio
 import argparse
+import re
+from datetime import datetime
+import urllib.request
 
 from pathlib import Path
 from playwright.async_api import async_playwright
@@ -37,6 +40,149 @@ BASE_DIR = Path(__file__).resolve().parent
 PROFILES_DIR = BASE_DIR / "profiles"
 ACCOUNTS_FILE = BASE_DIR / "accounts.json"
 PROXIES_FILE = BASE_DIR / "proxies.txt"
+ENGAGED_VIDEOS_FILE = BASE_DIR / "engaged_videos.json"
+
+def extract_tiktok_video_id(url: str) -> str | None:
+    """Extracts numeric video ID from TikTok URL if present."""
+    if not url:
+        return None
+    m = re.search(r'/(?:video|v|embed)/(\d+)', url)
+    if m:
+        return m.group(1)
+    m = re.search(r'[?&](?:item_id|video_id)=(\d+)', url)
+    if m:
+        return m.group(1)
+    return None
+
+def normalize_tiktok_url(url: str) -> str:
+    """Strips query parameters, tracking tags, and trailing slashes for standard comparison."""
+    if not url:
+        return ""
+    clean = url.split("?")[0].split("#")[0].rstrip("/").strip().lower()
+    return clean
+
+def resolve_tiktok_url(url: str, timeout: float = 4.0) -> str:
+    """Follows HTTP redirects for shortened TikTok URLs (vt.tiktok.com / vm.tiktok.com) to find canonical URL."""
+    if not url or ("vt.tiktok.com" not in url and "vm.tiktok.com" not in url):
+        return url
+    try:
+        req = urllib.request.Request(
+            url,
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+        )
+        opener = urllib.request.build_opener(urllib.request.HTTPRedirectHandler)
+        with opener.open(req, timeout=timeout) as resp:
+            return resp.geturl() or url
+    except Exception:
+        return url
+
+def load_engaged_videos() -> dict:
+    """Loads engaged videos record from JSON storage."""
+    if not ENGAGED_VIDEOS_FILE.exists():
+        return {}
+    try:
+        with open(ENGAGED_VIDEOS_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+def save_engaged_videos(data: dict):
+    """Saves engaged videos record to JSON storage safely."""
+    try:
+        with open(ENGAGED_VIDEOS_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        print(f"[!] Could not save engaged videos: {e}")
+
+def is_video_already_engaged(url: str, resolve_short: bool = True) -> tuple[bool, dict | None]:
+    """
+    Checks if a video URL or its canonical ID has already been engaged with.
+    Returns (True, entry_data) if already engaged, else (False, None).
+    """
+    if not url:
+        return False, None
+    data = load_engaged_videos()
+    if not data:
+        return False, None
+
+    # Check 1: Direct normalized URL match
+    norm_url = normalize_tiktok_url(url)
+    for entry_id, entry in data.items():
+        if entry.get("normalized_url") == norm_url:
+            return True, entry
+        if norm_url in [normalize_tiktok_url(u) for u in entry.get("urls", [])]:
+            return True, entry
+
+    # Check 2: Direct video ID match
+    vid_id = extract_tiktok_video_id(url)
+    if vid_id and vid_id in data:
+        return True, data[vid_id]
+
+    # Check 3: If shortened URL, resolve to check canonical target
+    if resolve_short and ("vt.tiktok.com" in url or "vm.tiktok.com" in url):
+        resolved = resolve_tiktok_url(url)
+        if resolved and resolved != url:
+            res_id = extract_tiktok_video_id(resolved)
+            if res_id and res_id in data:
+                return True, data[res_id]
+            norm_res = normalize_tiktok_url(resolved)
+            for entry_id, entry in data.items():
+                if entry.get("normalized_url") == norm_res:
+                    return True, entry
+                if norm_res in [normalize_tiktok_url(u) for u in entry.get("urls", [])]:
+                    return True, entry
+
+    return False, None
+
+def mark_video_engaged(url: str, canonical_url: str = None, video_id: str = None, action: str = "all", success_count: int = 1):
+    """
+    Records a video as engaged so it will not be engaged with again.
+    """
+    if not url:
+        return
+
+    data = load_engaged_videos()
+
+    # Try resolving video ID and canonical URL if needed
+    if not video_id:
+        video_id = extract_tiktok_video_id(url)
+    if not video_id and canonical_url:
+        video_id = extract_tiktok_video_id(canonical_url)
+    if not video_id and ("vt.tiktok.com" in url or "vm.tiktok.com" in url):
+        res = resolve_tiktok_url(url)
+        video_id = extract_tiktok_video_id(res)
+        if res != url and not canonical_url:
+            canonical_url = res
+
+    key = video_id if video_id else normalize_tiktok_url(canonical_url or url)
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    entry = data.get(key, {})
+    urls_list = entry.get("urls", [])
+    if url not in urls_list:
+        urls_list.append(url)
+    if canonical_url and canonical_url not in urls_list:
+        urls_list.append(canonical_url)
+
+    entry["video_id"] = video_id
+    entry["primary_url"] = canonical_url or url
+    entry["normalized_url"] = normalize_tiktok_url(canonical_url or url)
+    entry["urls"] = urls_list
+    entry["last_action"] = action
+    entry["last_engaged_at"] = now_str
+    if "first_engaged_at" not in entry:
+        entry["first_engaged_at"] = now_str
+    entry["success_count"] = entry.get("success_count", 0) + success_count
+
+    data[key] = entry
+    save_engaged_videos(data)
+
+def clear_engaged_history() -> int:
+    """Clears all engaged video records. Returns number of records deleted."""
+    data = load_engaged_videos()
+    count = len(data)
+    save_engaged_videos({})
+    return count
 
 DEFAULT_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -673,7 +819,8 @@ async def engage_post(account, post_url, do_like=True, do_follow=False, comment_
     result_payload = {
         "success": False,
         "start_metrics": None,
-        "end_metrics": None
+        "end_metrics": None,
+        "canonical_url": None
     }
 
     if not profile_path.exists():
@@ -757,6 +904,11 @@ async def engage_post(account, post_url, do_like=True, do_follow=False, comment_
                 await page.goto(post_url, wait_until="commit", timeout=45000)
             except Exception:
                 await page.goto(post_url, wait_until="domcontentloaded", timeout=60000)
+
+            try:
+                result_payload["canonical_url"] = page.url
+            except Exception:
+                pass
 
             # Wait for video container or main feed to render on slow networks
             try:

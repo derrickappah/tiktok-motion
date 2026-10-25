@@ -108,6 +108,9 @@ def build_main_menu(chat_id: int = None):
         ],
         [
             InlineKeyboardButton("📊 Accounts Health", callback_data="cmd_status"),
+            InlineKeyboardButton("📜 Engaged History", callback_data="cmd_history"),
+        ],
+        [
             InlineKeyboardButton("⚙️ Settings / Delays", callback_data="cmd_settings"),
         ]
     ])
@@ -155,6 +158,52 @@ async def stop_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "ℹ️ No automation is currently running.\nAll browser sessions are cleared.",
             reply_markup=build_main_menu(chat_id)
         )
+
+
+async def history_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Command handler for /history to view engaged video history."""
+    if not is_authorized(update):
+        await update.message.reply_text("⛔ Unauthorized user.")
+        return
+    from tiktok_auto import load_engaged_videos
+    data = load_engaged_videos()
+    total = len(data)
+    if total == 0:
+        await update.message.reply_text(
+            "📜 *Engaged Videos History*\n\n_No videos have been engaged with yet._",
+            reply_markup=build_main_menu(update.effective_chat.id),
+            parse_mode="Markdown"
+        )
+        return
+
+    items = list(data.values())[-10:]
+    lines = []
+    for it in reversed(items):
+        url = it.get("primary_url") or it.get("normalized_url") or "Unknown"
+        ts = it.get("last_engaged_at", "N/A")
+        act = it.get("last_action", "N/A")
+        lines.append(f"• `{url}`\n  _Action: {act.upper()} | Date: {ts}_")
+
+    msg = f"📜 *ENGAGED VIDEOS HISTORY ({total} total)*\n\n" + "\n\n".join(lines)
+    kb = [
+        [InlineKeyboardButton("🗑️ Clear History", callback_data="history_clear_confirm")],
+        [InlineKeyboardButton("🔙 Main Menu", callback_data="menu_home")]
+    ]
+    await update.message.reply_text(msg, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+
+
+async def clear_history_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Command handler for /clear_history to reset engaged video records."""
+    if not is_authorized(update):
+        await update.message.reply_text("⛔ Unauthorized user.")
+        return
+    from tiktok_auto import clear_engaged_history
+    count = clear_engaged_history()
+    await update.message.reply_text(
+        f"🗑️ *Engaged Videos History Cleared!*\n\nRemoved *{count}* recorded video(s).\nYou can now re-engage any links.",
+        reply_markup=build_main_menu(update.effective_chat.id),
+        parse_mode="Markdown"
+    )
 
 
 async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -309,6 +358,44 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         kb = [[InlineKeyboardButton("🔙 Main Menu", callback_data="menu_home")]]
         await query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
 
+    elif data == "cmd_history":
+        from tiktok_auto import load_engaged_videos
+        data_dict = load_engaged_videos()
+        total = len(data_dict)
+        if total == 0:
+            kb = [[InlineKeyboardButton("🔙 Main Menu", callback_data="menu_home")]]
+            await query.edit_message_text(
+                "📜 *Engaged Videos History*\n\n_No videos have been engaged with yet._",
+                reply_markup=InlineKeyboardMarkup(kb),
+                parse_mode="Markdown"
+            )
+            return
+
+        items = list(data_dict.values())[-8:]
+        lines = []
+        for it in reversed(items):
+            url = it.get("primary_url") or it.get("normalized_url") or "Unknown"
+            ts = it.get("last_engaged_at", "N/A")
+            act = it.get("last_action", "N/A")
+            lines.append(f"• `{url}`\n  _Action: {act.upper()} | Date: {ts}_")
+
+        msg = f"📜 *ENGAGED VIDEOS HISTORY ({total} total)*\n\n" + "\n\n".join(lines)
+        kb = [
+            [InlineKeyboardButton("🗑️ Clear History", callback_data="history_clear_confirm")],
+            [InlineKeyboardButton("🔙 Main Menu", callback_data="menu_home")]
+        ]
+        await query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+
+    elif data == "history_clear_confirm":
+        from tiktok_auto import clear_engaged_history
+        count = clear_engaged_history()
+        kb = [[InlineKeyboardButton("🔙 Main Menu", callback_data="menu_home")]]
+        await query.edit_message_text(
+            f"🗑️ *Engaged Videos History Cleared!*\n\nRemoved *{count}* recorded video(s).\nYou can now re-engage any links.",
+            reply_markup=InlineKeyboardMarkup(kb),
+            parse_mode="Markdown"
+        )
+
     elif data == "menu_home":
         USER_STATES[chat_id] = {}
         await query.edit_message_text(
@@ -355,6 +442,56 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=build_main_menu(chat_id)
         )
         return
+
+    # Filter for duplicate / already engaged videos
+    from tiktok_auto import is_video_already_engaged
+    new_urls = []
+    already_engaged = []
+
+    for u in urls:
+        is_engaged, entry = is_video_already_engaged(u)
+        if is_engaged:
+            already_engaged.append((u, entry))
+        else:
+            new_urls.append(u)
+
+    if already_engaged and not new_urls:
+        USER_STATES[chat_id] = {}
+        if len(already_engaged) == 1:
+            u, entry = already_engaged[0]
+            engaged_at = entry.get("last_engaged_at", "previously") if entry else "previously"
+            action_done = entry.get("last_action", "actions") if entry else "actions"
+            await update.message.reply_text(
+                f"⚠️ *This video has already been engaged with!*\n\n"
+                f"• *Link:* `{u}`\n"
+                f"• *Action Taken:* `{action_done.upper()}`\n"
+                f"• *Completed At:* `{engaged_at}`\n\n"
+                f"_To prevent duplicate actions on the same video, this link was skipped._\n"
+                f"_Tip: Use /clear_history if you wish to reset engaged history._",
+                reply_markup=build_main_menu(chat_id),
+                parse_mode="Markdown"
+            )
+        else:
+            list_text = "\n".join([f"• `{u}` (_engaged {entry.get('last_engaged_at', '')}_)" for u, entry in already_engaged])
+            await update.message.reply_text(
+                f"⚠️ *All submitted videos have already been engaged with!*\n\n"
+                f"{list_text}\n\n"
+                f"_To prevent duplicate actions, the queue was not started._\n"
+                f"_Tip: Use /clear_history if you wish to reset engaged history._",
+                reply_markup=build_main_menu(chat_id),
+                parse_mode="Markdown"
+            )
+        return
+
+    if already_engaged and new_urls:
+        list_text = "\n".join([f"• `{u}`" for u, _ in already_engaged])
+        await update.message.reply_text(
+            f"ℹ️ *Notice:* {len(already_engaged)} video(s) were already engaged with previously and skipped:\n"
+            f"{list_text}\n\n"
+            f"⏩ Proceeding with {len(new_urls)} fresh video(s)...",
+            parse_mode="Markdown"
+        )
+        urls = new_urls
 
     # Reset state
     USER_STATES[chat_id] = {}
@@ -604,6 +741,21 @@ async def run_engagement_pipeline(chat_id: int, context: ContextTypes.DEFAULT_TY
                 await safe_send_message(metric_report)
             success_count = sum(1 for r in results if r)
 
+            # Record video as engaged if at least 1 account succeeded
+            if success_count > 0:
+                from tiktok_auto import mark_video_engaged
+                canon_url = None
+                if isinstance(last_res, dict) and last_res.get("canonical_url"):
+                    canon_url = last_res.get("canonical_url")
+                elif curr_total_accs > 1 and isinstance(first_res, dict) and first_res.get("canonical_url"):
+                    canon_url = first_res.get("canonical_url")
+                mark_video_engaged(
+                    url=current_url,
+                    canonical_url=canon_url,
+                    action=action_type,
+                    success_count=success_count
+                )
+
             if u_idx < total_urls and chat_id not in STOP_REQUESTED:
                 await safe_send_message(f"⏸️ Video {u_idx} completed ({success_count}/{total_accs} success). Cooling down 5s before next video...", reply_markup=stop_kb)
                 await asyncio.sleep(5.0)
@@ -697,6 +849,8 @@ def main():
         app.add_handler(CommandHandler("menu", start_cmd))
         app.add_handler(CommandHandler("stop", stop_cmd))
         app.add_handler(CommandHandler("cancel", stop_cmd))
+        app.add_handler(CommandHandler("history", history_cmd))
+        app.add_handler(CommandHandler("clear_history", clear_history_cmd))
         app.add_handler(CallbackQueryHandler(button_callback))
         app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
         app.run_polling()

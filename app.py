@@ -176,6 +176,33 @@ def prompt_for_urls():
             if "tiktok.com" in piece and piece not in urls:
                 urls.append(piece)
 
+    # Filter for duplicate / already engaged videos
+    if urls:
+        from tiktok_auto import is_video_already_engaged
+        already_engaged = []
+        new_urls = []
+        for u in urls:
+            is_eng, entry = is_video_already_engaged(u)
+            if is_eng:
+                already_engaged.append((u, entry))
+            else:
+                new_urls.append(u)
+
+        if already_engaged:
+            print(f"\n{YELLOW}[⚠️ NOTICE] {len(already_engaged)} video(s) have already been engaged with previously:{RESET}")
+            for u, entry in already_engaged:
+                ts = entry.get("last_engaged_at", "previously") if entry else "previously"
+                act = entry.get("last_action", "N/A") if entry else "N/A"
+                print(f"  • {u} (Action: {act.upper()} | Date: {ts})")
+
+            skip = input(f"\n{YELLOW}Skip already engaged video(s)? [Y/n]: {RESET}").strip().lower()
+            if skip != "n":
+                if not new_urls:
+                    print(f"{RED}[!] All entered video(s) have already been engaged with. Queue cancelled.{RESET}")
+                    return []
+                print(f"{GREEN}[+] Skipped {len(already_engaged)} duplicate(s). Proceeding with {len(new_urls)} fresh video(s).{RESET}")
+                urls = new_urls
+
     return urls
 
 
@@ -406,6 +433,10 @@ def run_engagement_menu():
                 print(f"  🔄 Shares:    {start_m.get('shares') or 'N/A'}  ➡️  {GREEN}{end_m.get('shares') or 'N/A'}{RESET}")
                 print(f"========================================================{RESET}\n")
 
+            from tiktok_auto import mark_video_engaged
+            canon = last_result.get("canonical_url") if isinstance(last_result, dict) else None
+            mark_video_engaged(url=post_url, canonical_url=canon, action="all")
+
             if u_idx < len(urls):
                 print(f"\n{CYAN}[⏸️] Completed video {u_idx}. Waiting 5s before starting next video in queue...{RESET}")
                 await asyncio.sleep(5.0)
@@ -633,6 +664,10 @@ def run_single_action_flow(action_type):
                 print(f"  🔖 Saves:     {start_m.get('saves') or 'N/A'}  ➡️  {GREEN}{end_m.get('saves') or 'N/A'}{RESET}")
                 print(f"  🔄 Shares:    {start_m.get('shares') or 'N/A'}  ➡️  {GREEN}{end_m.get('shares') or 'N/A'}{RESET}")
                 print(f"========================================================{RESET}\n")
+
+            from tiktok_auto import mark_video_engaged
+            canon = last_result.get("canonical_url") if isinstance(last_result, dict) else None
+            mark_video_engaged(url=post_url, canonical_url=canon, action=action_type)
 
             if u_idx < len(urls):
                 print(f"\n{CYAN}[⏸️] Completed video {u_idx}. Waiting 5s before next video in queue...{RESET}")
@@ -1098,6 +1133,42 @@ def run_telegram_bot_flow():
     input("\nPress ENTER to return to menu...")
 
 
+def engaged_history_menu():
+    while True:
+        print_banner()
+        print(f"{BOLD}[15] 📜 ENGAGED VIDEOS HISTORY{RESET}\n")
+        from tiktok_auto import load_engaged_videos, clear_engaged_history
+        data = load_engaged_videos()
+        print(f"Total videos engaged: {CYAN}{len(data)}{RESET}\n")
+
+        if not data:
+            print(f"{YELLOW}No videos have been recorded in history yet.{RESET}\n")
+        else:
+            items = list(data.values())[-15:]
+            print(f"{'#':<4} {'ACTION':<14} {'DATE':<20} {'URL':<45}")
+            print("─" * 85)
+            for i, it in enumerate(reversed(items), 1):
+                url = it.get("primary_url") or it.get("normalized_url") or "Unknown"
+                if len(url) > 42:
+                    url = url[:39] + "..."
+                act = (it.get("last_action") or "N/A").upper()
+                dt = it.get("last_engaged_at") or "N/A"
+                print(f"{i:<4} {act:<14} {dt:<20} {url:<45}")
+
+        print(f"\n{BOLD}Options:{RESET}")
+        print("  [C] Clear / Reset History")
+        print("  [0] Back to Main Menu\n")
+        ch = input(f"{YELLOW}Choose option:{RESET} ").strip().upper()
+        if ch == "0":
+            break
+        elif ch == "C":
+            confirm = input(f"{RED}Are you sure you want to clear all engaged history? (y/N): {RESET}").strip().lower()
+            if confirm == "y":
+                c = clear_engaged_history()
+                print(f"{GREEN}[+] Cleared {c} record(s)!{RESET}")
+                input("\nPress ENTER to continue...")
+
+
 # -------------------------------------------------------------
 # Main Application Loop
 # -------------------------------------------------------------
@@ -1127,9 +1198,10 @@ def main():
         print(f"  {BOLD}[12]{RESET} 💬 Comment Templates Library")
         print(f"  {BOLD}[13]{RESET} ⚙️ Settings (Delays, AI Keys, Telegram)")
         print(f"  {BOLD}[14]{RESET} 🌐 Proxy Pool Manager ({len(proxies)} loaded)")
+        print(f"  {BOLD}[15]{RESET} 📜 Engaged Videos History (View / Clear)")
         print(f"  {BOLD}[0]{RESET} 🚪 Exit\n")
 
-        choice = input(f"{YELLOW}Select an option [0-14]:{RESET} ").strip()
+        choice = input(f"{YELLOW}Select an option [0-15]:{RESET} ").strip()
 
         if choice == "1":
             run_single_action_flow("like")
@@ -1159,6 +1231,8 @@ def main():
             settings_menu()
         elif choice == "14":
             proxy_manager_menu()
+        elif choice == "15":
+            engaged_history_menu()
         elif choice == "0":
             print(f"\n{CYAN}Thanks for using TikTok Motion by Dee! Goodbye.{RESET}\n")
             sys.exit(0)
