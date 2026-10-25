@@ -78,7 +78,10 @@ def save_accounts(accounts):
 
 def is_account_logged_in(account_id):
     """Checks if an account profile actually contains a logged-in TikTok session cookie."""
-    cookie_file = PROFILES_DIR / account_id / "Default" / "Network" / "Cookies"
+    profile_path = PROFILES_DIR / account_id
+    if (profile_path / ".session_expired").exists():
+        return False
+    cookie_file = profile_path / "Default" / "Network" / "Cookies"
     if not cookie_file.exists():
         return False
     try:

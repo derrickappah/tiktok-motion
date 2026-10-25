@@ -32,7 +32,10 @@ USER_STATES = {}
 
 def is_account_logged_in(account_id):
     """Checks if an account profile actually contains a logged-in TikTok session cookie."""
-    cookie_file = PROFILES_DIR / account_id / "Default" / "Network" / "Cookies"
+    profile_path = PROFILES_DIR / account_id
+    if (profile_path / ".session_expired").exists():
+        return False
+    cookie_file = profile_path / "Default" / "Network" / "Cookies"
     if not cookie_file.exists():
         return False
     try:
@@ -335,9 +338,14 @@ async def run_engagement_pipeline(chat_id: int, context: ContextTypes.DEFAULT_TY
             parse_mode="Markdown"
         )
 
-        # Randomize execution order of accounts for each video
-        exec_accounts = list(active_accounts)
+        # Filter active accounts dynamically in case any were marked expired on previous videos
+        exec_accounts = [a for a in active_accounts if is_account_logged_in(a['id'])]
+        if not exec_accounts:
+            await safe_send_message("⚠️ All accounts have expired sessions or are logged out. Please log in via `motion.bat`.")
+            break
+
         random.shuffle(exec_accounts)
+        curr_total_accs = len(exec_accounts)
 
         async def safe_send_message(text: str, reply_markup=None):
             try:
@@ -351,7 +359,7 @@ async def run_engagement_pipeline(chat_id: int, context: ContextTypes.DEFAULT_TY
                 await asyncio.sleep(stagger)
 
             async with sem:
-                await safe_send_message(f"🚀 [Vid {u_idx}/{total_urls} | Acc {idx+1}/{total_accs}] Starting `{acc['id']}`...")
+                await safe_send_message(f"🚀 [Vid {u_idx}/{total_urls} | Acc {idx+1}/{curr_total_accs}] Starting `{acc['id']}`...")
                 res = await engage_post(
                     account=acc,
                     post_url=current_url,
@@ -362,6 +370,8 @@ async def run_engagement_pipeline(chat_id: int, context: ContextTypes.DEFAULT_TY
                     do_save=do_save,
                     do_repost=do_repost
                 )
+                if not is_account_logged_in(acc['id']):
+                    await safe_send_message(f"⚠️ *Session Expired:* Account `{acc['id']}` session expired/invalidated! Marked as 'Needs Login'.")
                 return res
 
         # Run all accounts except the last concurrently
@@ -373,7 +383,7 @@ async def run_engagement_pipeline(chat_id: int, context: ContextTypes.DEFAULT_TY
         # Last account runs with start/end count metric tracking
         last_acc = exec_accounts[-1]
         last_idx = len(exec_accounts) - 1
-        await safe_send_message(f"🚀 [Vid {u_idx}/{total_urls} | Acc {last_idx+1}/{total_accs}] Starting LAST `{last_acc['id']}` (Capturing Count Shifts)...")
+        await safe_send_message(f"🚀 [Vid {u_idx}/{total_urls} | Acc {last_idx+1}/{curr_total_accs}] Starting LAST `{last_acc['id']}` (Capturing Count Shifts)...")
         last_res = await engage_post(
             account=last_acc,
             post_url=current_url,
@@ -385,6 +395,9 @@ async def run_engagement_pipeline(chat_id: int, context: ContextTypes.DEFAULT_TY
             do_repost=do_repost,
             return_metrics=True
         )
+
+        if not is_account_logged_in(last_acc['id']):
+            await safe_send_message(f"⚠️ *Session Expired:* Account `{last_acc['id']}` session expired/invalidated! Marked as 'Needs Login'.")
 
         last_success = False
         if isinstance(last_res, dict):

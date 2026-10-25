@@ -65,23 +65,81 @@ def load_proxies():
         proxies = [line.strip() for line in f if line.strip() and not line.startswith("#")]
     return proxies
 
+def is_account_logged_in(account_id):
+    """Checks if an account profile actually contains a logged-in TikTok session cookie."""
+    profile_path = PROFILES_DIR / account_id
+    if (profile_path / ".session_expired").exists():
+        return False
+    cookie_file = profile_path / "Default" / "Network" / "Cookies"
+    if not cookie_file.exists():
+        return False
+    try:
+        import sqlite3
+        conn = sqlite3.connect(str(cookie_file))
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM cookies WHERE host_key LIKE '%tiktok.com%'")
+        names = [r[0] for r in cursor.fetchall()]
+        conn.close()
+        return any("sessionid" in n.lower() or "sid_guard" in n.lower() or "uid_tt" in n.lower() for n in names)
+    except Exception:
+        return (PROFILES_DIR / account_id).exists()
+
+
 def mark_account_session_expired(account_id):
     """
-    Marks an account as not logged in by clearing invalid/expired TikTok session cookies
-    from its Chrome profile SQLite database so health checks recognize it as 'Needs Login'.
+    Marks an account as not logged in by:
+    1. Creating a '.session_expired' marker in the account profile directory.
+    2. Clearing invalid/expired TikTok session cookies from its Chrome profile SQLite database.
     """
     profile_path = PROFILES_DIR / account_id
+    try:
+        profile_path.mkdir(parents=True, exist_ok=True)
+        (profile_path / ".session_expired").touch(exist_ok=True)
+    except Exception:
+        pass
+
     cookie_file = profile_path / "Default" / "Network" / "Cookies"
     if cookie_file.exists():
-        try:
-            import sqlite3
-            conn = sqlite3.connect(str(cookie_file))
-            cursor = conn.cursor()
-            cursor.execute("DELETE FROM cookies WHERE host_key LIKE '%tiktok.com%' AND (name LIKE '%sessionid%' OR name LIKE '%sid_guard%' OR name LIKE '%uid_tt%')")
-            conn.commit()
-            conn.close()
-        except Exception:
-            pass
+        for _ in range(5):
+            try:
+                import sqlite3
+                conn = sqlite3.connect(str(cookie_file), timeout=3.0)
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM cookies WHERE host_key LIKE '%tiktok.com%' AND (name LIKE '%sessionid%' OR name LIKE '%sid_guard%' OR name LIKE '%uid_tt%')")
+                conn.commit()
+                conn.close()
+                break
+            except Exception:
+                import time
+                time.sleep(0.4)
+
+
+async def is_login_modal_open(page):
+    """Checks if a 'Log in to TikTok' modal, popup dialog, or banner is currently visible on screen."""
+    try:
+        return await page.evaluate('''() => {
+            const isVisible = (el) => {
+                if (!el) return false;
+                const style = window.getComputedStyle(el);
+                if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+                const rect = el.getBoundingClientRect();
+                return rect.width > 0 && rect.height > 0;
+            };
+
+            const modals = document.querySelectorAll('div[id="loginContainer"], div[class*="DivLoginContainer"], div[class*="modal-login"]');
+            for (const m of modals) {
+                if (isVisible(m)) return true;
+            }
+
+            const headings = Array.from(document.querySelectorAll('h1, h2, h3, div, p'));
+            for (const h of headings) {
+                const txt = (h.textContent || '').trim().toLowerCase();
+                if ((txt === 'log in to tiktok' || txt === 'login to tiktok') && isVisible(h)) return true;
+            }
+            return false;
+        }''')
+    except Exception:
+        return False
 
 
 async def check_session_validity(page):
@@ -91,36 +149,98 @@ async def check_session_validity(page):
         False if explicitly logged out / session expired.
         True if logged in.
     """
-    return await page.evaluate('''() => {
-        // 1. Check for prominent 'Log in' buttons
-        const loginBtn = document.querySelector('button[data-e2e="nav-login-button"], button[data-e2e="top-login-button"], a[data-e2e="nav-login-button"]');
-        if (loginBtn && loginBtn.offsetParent !== null) {
-            return false;
-        }
+    try:
+        eval_result = await page.evaluate('''() => {
+            // Helper to check actual visibility without offsetParent bugs on position:fixed elements
+            const isVisible = (el) => {
+                if (!el) return false;
+                const style = window.getComputedStyle(el);
+                if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+                const rect = el.getBoundingClientRect();
+                return rect.width > 0 && rect.height > 0;
+            };
 
-        // 2. Check for login modal or login popup
-        const loginModal = document.querySelector('div[class*="DivLoginContainer"], div[class*="modal-login"], div[id="loginContainer"]');
-        if (loginModal && loginModal.offsetParent !== null) {
-            return false;
-        }
+            // 1. Check TikTok's server-injected rehydration data
+            try {
+                const scriptEl = document.getElementById('__UNIVERSAL_DATA_FOR_REHYDRATION__') || document.getElementById('SIGI_STATE');
+                if (scriptEl) {
+                    const parsed = JSON.parse(scriptEl.textContent || '{}');
+                    const defaultScope = parsed['__DEFAULT_SCOPE__'] || parsed;
+                    const appContext = defaultScope['webapp.app-context'] || defaultScope.appContext || parsed.AppContext;
+                    if (appContext && appContext.user) {
+                        if (appContext.user.isLoggedIn === false) return 'LOGGED_OUT';
+                        if (appContext.user.isLoggedIn === true) return 'LOGGED_IN';
+                    }
+                }
+            } catch (e) {}
 
-        // 3. Check for presence of user profile avatar or inbox icon (indicates active login)
-        const profileAvatar = document.querySelector('span[data-e2e="profile-icon"], img[data-e2e="profile-icon"], a[data-e2e="nav-profile"]');
-        if (profileAvatar) {
-            return true;
-        }
-
-        // 4. Check for 'Log in to TikTok' heading
-        const allHeadings = Array.from(document.querySelectorAll('h1, h2, h3, p'));
-        for (const h of allHeadings) {
-            const txt = (h.textContent || '').trim().toLowerCase();
-            if (txt === 'log in to tiktok' && h.offsetParent !== null) {
-                return false;
+            // 2. Check for visible 'Log in' buttons in navigation header or top bar
+            const loginSelectors = [
+                'button[data-e2e="nav-login-button"]',
+                'button[data-e2e="top-login-button"]',
+                'a[data-e2e="nav-login-button"]',
+                'a[data-e2e="top-login-button"]',
+                '#header-login-button',
+                '[data-e2e="login-button"]'
+            ];
+            for (const sel of loginSelectors) {
+                const el = document.querySelector(sel);
+                if (el && isVisible(el)) return 'LOGGED_OUT';
             }
-        }
 
-        return true;
-    }''')
+            // Also check all buttons/anchors in the top header or page with text "Log in"
+            const buttons = Array.from(document.querySelectorAll('header button, header a, nav button, nav a, button, a'));
+            for (const b of buttons) {
+                const txt = (b.innerText || b.textContent || '').trim().toLowerCase();
+                if ((txt === 'log in' || txt === 'log in to tiktok') && isVisible(b)) {
+                    return 'LOGGED_OUT';
+                }
+            }
+
+            // 3. Check for login modal or login popup container
+            const loginModal = document.querySelector('div[class*="DivLoginContainer"], div[class*="modal-login"], div[id="loginContainer"]');
+            if (loginModal && isVisible(loginModal)) {
+                return 'LOGGED_OUT';
+            }
+
+            // 4. Check for 'Log in to comment' placeholder or input overlay
+            const loginToComment = document.querySelector('div[data-placeholder*="Log in to comment" i], div[placeholder*="Log in to comment" i], [data-e2e="comment-input-placeholder"]');
+            if (loginToComment) {
+                const txt = (loginToComment.getAttribute('data-placeholder') || loginToComment.getAttribute('placeholder') || loginToComment.innerText || '').toLowerCase();
+                if (txt.includes('log in') && isVisible(loginToComment)) {
+                    return 'LOGGED_OUT';
+                }
+            }
+
+            // 5. Positive check: Profile avatar / Inbox icon
+            const profileAvatar = document.querySelector('span[data-e2e="profile-icon"], img[data-e2e="profile-icon"], a[data-e2e="nav-profile"], [data-e2e="inbox-icon"]');
+            if (profileAvatar && isVisible(profileAvatar)) {
+                return 'LOGGED_IN';
+            }
+
+            // 6. Check URL for login redirect
+            if (window.location.pathname.includes('/login') || window.location.href.includes('redirect_url')) {
+                return 'LOGGED_OUT';
+            }
+
+            return 'UNKNOWN';
+        }''')
+
+        if eval_result == 'LOGGED_OUT':
+            return False
+        if eval_result == 'LOGGED_IN':
+            return True
+
+        # Fallback check using Playwright locators
+        if await page.locator('button:has-text("Log in"), a:has-text("Log in"), [data-e2e="top-login-button"], [data-e2e="nav-login-button"]').first.is_visible(timeout=2000):
+            return False
+
+        if await page.locator('span[data-e2e="profile-icon"], img[data-e2e="profile-icon"], a[data-e2e="nav-profile"], [data-e2e="inbox-icon"]').first.is_visible(timeout=2000):
+            return True
+
+        return True
+    except Exception:
+        return True
 
 
 async def get_post_metrics(page):
@@ -492,6 +612,10 @@ async def setup_login_session(account_id):
             pass
 
     if is_logged_in:
+        try:
+            (profile_path / ".session_expired").unlink(missing_ok=True)
+        except Exception:
+            pass
         print(f"\n✅ SUCCESS: Login session verified & permanently saved for {account_id}!")
     else:
         print(f"\n⚠️ WARNING: No active TikTok session cookie was detected for {account_id}.")
@@ -623,13 +747,22 @@ async def engage_post(account, post_url, do_like=True, do_follow=False, comment_
             except Exception:
                 pass
 
+            session_is_expired = False
+
             # Detect expired session or invalidated cookies
             try:
                 is_logged_in = await check_session_validity(page)
                 if not is_logged_in:
+                    session_is_expired = True
                     print(f"\n{RED}[⚠️ SESSION EXPIRED] Account '{account_id}' session has expired or cookies were invalidated!{RESET}")
                     print(f"{YELLOW}[!] Automatically marking '{account_id}' as 'Needs Login' and clearing stale session...{RESET}")
                     mark_account_session_expired(account_id)
+                    try:
+                        await context.clear_cookies()
+                    except Exception:
+                        pass
+                    result_payload["session_expired"] = True
+                    result_payload["success"] = False
                     return result_payload if return_metrics else False
             except Exception:
                 pass
@@ -653,10 +786,20 @@ async def engage_post(account, post_url, do_like=True, do_follow=False, comment_
             # 1. LIKE (Wait for action to complete and verify)
             if do_like:
                 await try_like(page, account_id)
+                if not is_account_logged_in(account_id):
+                    session_is_expired = True
+                    result_payload["session_expired"] = True
+                    result_payload["success"] = False
+                    return result_payload if return_metrics else False
 
             # 2. FOLLOW CREATOR
             if do_follow:
                 await try_follow(page, account_id)
+                if not is_account_logged_in(account_id):
+                    session_is_expired = True
+                    result_payload["session_expired"] = True
+                    result_payload["success"] = False
+                    return result_payload if return_metrics else False
 
             # 3. COMMENT
             if comment_text:
@@ -673,6 +816,11 @@ async def engage_post(account, post_url, do_like=True, do_follow=False, comment_
                     final_comment = generate_ai_comment(caption)
 
                 await try_comment(page, account_id, final_comment)
+                if not is_account_logged_in(account_id):
+                    session_is_expired = True
+                    result_payload["session_expired"] = True
+                    result_payload["success"] = False
+                    return result_payload if return_metrics else False
 
             # 4. SHARE
             if do_share:
@@ -681,10 +829,20 @@ async def engage_post(account, post_url, do_like=True, do_follow=False, comment_
             # 5. SAVE / FAVORITE
             if do_save:
                 await try_save(page, account_id)
+                if not is_account_logged_in(account_id):
+                    session_is_expired = True
+                    result_payload["session_expired"] = True
+                    result_payload["success"] = False
+                    return result_payload if return_metrics else False
 
             # 6. REPOST
             if do_repost:
                 await try_repost(page, account_id)
+                if not is_account_logged_in(account_id):
+                    session_is_expired = True
+                    result_payload["session_expired"] = True
+                    result_payload["success"] = False
+                    return result_payload if return_metrics else False
 
             # Crucial: Wait for network requests to finish and confirm before closing tab
             print(f"[{account_id}] ⏳ Waiting for actions to fully sync and persist with TikTok servers...")
@@ -723,6 +881,9 @@ async def engage_post(account, post_url, do_like=True, do_follow=False, comment_
                     subprocess.run(["taskkill", "/F", "/PID", str(proc.pid), "/T"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 except Exception:
                     pass
+            # Post-termination cleanup: Ensure session is wiped from disk without database file locks
+            if session_is_expired:
+                mark_account_session_expired(account_id)
 
 
 async def engage_via_live_chrome(post_url, do_like=True, do_follow=False, comment_text=None, account_id="acc_1"):
@@ -906,6 +1067,11 @@ async def try_like(page, account_id):
                     print(f"[{account_id}] ❤️ Clicked like button! Waiting for confirmation...")
                     await asyncio.sleep(random.uniform(2.0, 3.5))
 
+                    if await is_login_modal_open(page):
+                        print(f"\n{RED}[⚠️ SESSION EXPIRED] Account '{account_id}' session has expired (login modal triggered by like)!{RESET}")
+                        mark_account_session_expired(account_id)
+                        return False
+
                     # Post-click verification: Ensure it is now in liked state
                     if await check_is_liked(page):
                         print(f"[{account_id}] ✅ Verified: Post is now liked.")
@@ -950,6 +1116,10 @@ async def try_like(page, account_id):
             elif liked_js == "clicked":
                 print(f"[{account_id}] ❤️ Liked post via DOM trigger!")
                 await asyncio.sleep(2.5)
+                if await is_login_modal_open(page):
+                    print(f"\n{RED}[⚠️ SESSION EXPIRED] Account '{account_id}' session has expired (login modal triggered by DOM like)!{RESET}")
+                    mark_account_session_expired(account_id)
+                    return False
                 return True
         except Exception:
             pass
@@ -976,6 +1146,10 @@ async def try_like(page, account_id):
             await asyncio.sleep(0.5)
         await page.keyboard.press("l")
         await asyncio.sleep(2.0)
+        if await is_login_modal_open(page):
+            print(f"\n{RED}[⚠️ SESSION EXPIRED] Account '{account_id}' session has expired (login modal triggered by shortcut 'L')!{RESET}")
+            mark_account_session_expired(account_id)
+            return False
         print(f"[{account_id}] ❤️ Sent like keypress 'L'!")
         return True
     except Exception:
@@ -1005,7 +1179,11 @@ async def try_follow(page, account_id):
             await btn.click()
             print(f"[{account_id}] 👤 Followed creator.")
             await asyncio.sleep(random.uniform(1.5, 3.0))
-            return
+            if await is_login_modal_open(page):
+                print(f"\n{RED}[⚠️ SESSION EXPIRED] Account '{account_id}' session has expired (login modal triggered by follow)!{RESET}")
+                mark_account_session_expired(account_id)
+                return False
+            return True
     print(f"[{account_id}] ⚠️ Follow button not found (or already following).")
 
 
@@ -1117,7 +1295,11 @@ async def try_save(page, account_id):
             await btn.click()
             print(f"[{account_id}] 🔖 Saved / Added to Favorites!")
             await asyncio.sleep(random.uniform(1.5, 3.0))
-            return
+            if await is_login_modal_open(page):
+                print(f"\n{RED}[⚠️ SESSION EXPIRED] Account '{account_id}' session has expired (login modal triggered by save)!{RESET}")
+                mark_account_session_expired(account_id)
+                return False
+            return True
 
     # Method 2: Inspect adjacent buttons next to the Like or Comment button in the interaction bar
     try:
@@ -1310,6 +1492,25 @@ async def try_comment(page, account_id, text):
             mark_account_session_expired(account_id)
         return
 
+    # Check if a login modal is already open before attempting to comment
+    if await is_login_modal_open(page):
+        print(f"\n{RED}[⚠️ SESSION EXPIRED] Account '{account_id}' session has expired (login modal active)!{RESET}")
+        mark_account_session_expired(account_id)
+        return
+
+    # Check if the candidate input is actually a "Log in to comment" placeholder or prompt
+    if inp:
+        try:
+            ph = ((await inp.get_attribute("placeholder") or "") + " " +
+                  (await inp.get_attribute("data-placeholder") or "") + " " +
+                  (await inp.inner_text() or "")).lower()
+            if "log in" in ph or "login" in ph:
+                print(f"\n{RED}[⚠️ SESSION EXPIRED] Account '{account_id}' session has expired (login prompt in comment area)!{RESET}")
+                mark_account_session_expired(account_id)
+                return
+        except Exception:
+            pass
+
     # Focus and type comment
     await inp.scroll_into_view_if_needed()
     try:
@@ -1320,6 +1521,11 @@ async def try_comment(page, account_id, text):
         await inp.evaluate("el => el.focus()")
 
     await asyncio.sleep(random.uniform(0.6, 1.2))
+
+    if await is_login_modal_open(page):
+        print(f"\n{RED}[⚠️ SESSION EXPIRED] Account '{account_id}' session has expired (login modal triggered by comment focus)!{RESET}")
+        mark_account_session_expired(account_id)
+        return
 
     for char in text:
         await page.keyboard.type(char, delay=random.randint(40, 110))
@@ -1347,6 +1553,13 @@ async def try_comment(page, account_id, text):
 
     if not clicked_btn:
         await page.keyboard.press("Enter")
+
+    await asyncio.sleep(random.uniform(2.0, 3.5))
+
+    if await is_login_modal_open(page):
+        print(f"\n{RED}[⚠️ SESSION EXPIRED] Account '{account_id}' session has expired (login modal triggered by comment submission)!{RESET}")
+        mark_account_session_expired(account_id)
+        return
 
     print(f"[{account_id}] 💬 Commented: \"{text}\"")
     await asyncio.sleep(random.uniform(2.0, 4.0))
