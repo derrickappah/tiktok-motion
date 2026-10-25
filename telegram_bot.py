@@ -474,38 +474,113 @@ async def run_engagement_pipeline(chat_id: int, context: ContextTypes.DEFAULT_TY
                         await safe_send_message(f"⚠️ *Session Expired:* Account `{acc['id']}` session expired/invalidated! Marked as 'Needs Login'.")
                     return res
 
-            # Run all accounts except the last concurrently
+            # Run all intermediate accounts concurrently
             results = []
-            if len(exec_accounts) > 1:
-                prev_results = await asyncio.gather(*[run_acc(acc, i) for i, acc in enumerate(exec_accounts[:-1])])
-                results.extend(prev_results)
+            batch_start_metrics = None
+            last_res = None
 
-            if chat_id in STOP_REQUESTED:
-                break
+            if curr_total_accs == 1:
+                # Single account run: captures both start and end metrics
+                only_acc = exec_accounts[0]
+                await safe_send_message(
+                    f"🚀 [Vid {u_idx}/{total_urls} | Acc 1/1] Starting `{only_acc['id']}` (Capturing Count Shifts)...",
+                    reply_markup=stop_kb
+                )
+                last_res = await engage_post(
+                    account=only_acc,
+                    post_url=current_url,
+                    do_like=do_like,
+                    do_follow=do_follow,
+                    comment_text=comment_text,
+                    do_share=do_share,
+                    do_save=do_save,
+                    do_repost=do_repost,
+                    return_metrics=True
+                )
+                if not is_account_logged_in(only_acc['id']):
+                    await safe_send_message(f"⚠️ *Session Expired:* Account `{only_acc['id']}` session expired/invalidated! Marked as 'Needs Login'.")
 
-            # Last account runs with start/end count metric tracking
-            last_acc = exec_accounts[-1]
-            last_idx = len(exec_accounts) - 1
-            await safe_send_message(f"🚀 [Vid {u_idx}/{total_urls} | Acc {last_idx+1}/{curr_total_accs}] Starting LAST `{last_acc['id']}` (Capturing Count Shifts)...", reply_markup=stop_kb)
-            last_res = await engage_post(
-                account=last_acc,
-                post_url=current_url,
-                do_like=do_like,
-                do_follow=do_follow,
-                comment_text=comment_text,
-                do_share=do_share,
-                do_save=do_save,
-                do_repost=do_repost,
-                return_metrics=True
-            )
+                if isinstance(last_res, dict):
+                    batch_start_metrics = last_res.get("start_metrics")
+                    results.append(last_res.get("success", False))
+                else:
+                    results.append(bool(last_res))
+            else:
+                # Multi-account run:
+                # 1. First account runs to capture video starting baseline before any actions occur
+                first_acc = exec_accounts[0]
+                await safe_send_message(
+                    f"🚀 [Vid {u_idx}/{total_urls} | Acc 1/{curr_total_accs}] Starting FIRST `{first_acc['id']}` (Capturing Initial Counts)...",
+                    reply_markup=stop_kb
+                )
+                first_res = await engage_post(
+                    account=first_acc,
+                    post_url=current_url,
+                    do_like=do_like,
+                    do_follow=do_follow,
+                    comment_text=comment_text,
+                    do_share=do_share,
+                    do_save=do_save,
+                    do_repost=do_repost,
+                    return_metrics=True
+                )
+                if not is_account_logged_in(first_acc['id']):
+                    await safe_send_message(f"⚠️ *Session Expired:* Account `{first_acc['id']}` session expired/invalidated! Marked as 'Needs Login'.")
 
-            if not is_account_logged_in(last_acc['id']):
-                await safe_send_message(f"⚠️ *Session Expired:* Account `{last_acc['id']}` session expired/invalidated! Marked as 'Needs Login'.")
+                if isinstance(first_res, dict):
+                    batch_start_metrics = first_res.get("start_metrics")
+                    results.append(first_res.get("success", False))
+                else:
+                    results.append(bool(first_res))
 
-            last_success = False
+                if chat_id in STOP_REQUESTED:
+                    break
+
+                # 2. Intermediate accounts (accounts 1 to N-2) run concurrently
+                if curr_total_accs > 2:
+                    mid_accounts = exec_accounts[1:-1]
+                    mid_results = await asyncio.gather(*[run_acc(acc, i) for i, acc in enumerate(mid_accounts, 1)])
+                    for r in mid_results:
+                        if isinstance(r, dict):
+                            if batch_start_metrics is None or not any(batch_start_metrics.values()):
+                                if r.get("start_metrics"):
+                                    batch_start_metrics = r.get("start_metrics")
+                            results.append(r.get("success", False))
+                        else:
+                            results.append(bool(r))
+
+                if chat_id in STOP_REQUESTED:
+                    break
+
+                # 3. Last account runs with return_metrics=True to capture final end counts
+                last_acc = exec_accounts[-1]
+                last_idx = curr_total_accs - 1
+                await safe_send_message(
+                    f"🚀 [Vid {u_idx}/{total_urls} | Acc {last_idx+1}/{curr_total_accs}] Starting LAST `{last_acc['id']}` (Capturing Final Counts)...",
+                    reply_markup=stop_kb
+                )
+                last_res = await engage_post(
+                    account=last_acc,
+                    post_url=current_url,
+                    do_like=do_like,
+                    do_follow=do_follow,
+                    comment_text=comment_text,
+                    do_share=do_share,
+                    do_save=do_save,
+                    do_repost=do_repost,
+                    return_metrics=True
+                )
+                if not is_account_logged_in(last_acc['id']):
+                    await safe_send_message(f"⚠️ *Session Expired:* Account `{last_acc['id']}` session expired/invalidated! Marked as 'Needs Login'.")
+
+                if isinstance(last_res, dict):
+                    results.append(last_res.get("success", False))
+                else:
+                    results.append(bool(last_res))
+
+            # Send consolidated metrics report for this video
             if isinstance(last_res, dict):
-                last_success = last_res.get("success", False)
-                start_m = last_res.get("start_metrics") or {}
+                start_m = batch_start_metrics or last_res.get("start_metrics") or {}
                 end_m = last_res.get("end_metrics") or {}
                 metric_report = (
                     f"📊 *VIDEO METRICS REPORT [Vid {u_idx}/{total_urls}]*\n"
@@ -516,10 +591,17 @@ async def run_engagement_pipeline(chat_id: int, context: ContextTypes.DEFAULT_TY
                     f"• 🔄 Shares: *{start_m.get('shares') if start_m.get('shares') is not None else '0'}* ➡️ *{end_m.get('shares') if end_m.get('shares') is not None else '0'}*"
                 )
                 await safe_send_message(metric_report)
-            else:
-                last_success = bool(last_res)
-
-            results.append(last_success)
+            elif curr_total_accs > 1 and isinstance(first_res, dict):
+                start_m = batch_start_metrics or {}
+                metric_report = (
+                    f"📊 *VIDEO METRICS REPORT [Vid {u_idx}/{total_urls}]*\n"
+                    f"`{current_url}`\n\n"
+                    f"• ❤️ Likes: *{start_m.get('likes') if start_m.get('likes') is not None else '0'}* ➡️ *N/A*\n"
+                    f"• 💬 Comments: *{start_m.get('comments') if start_m.get('comments') is not None else '0'}* ➡️ *N/A*\n"
+                    f"• 🔖 Saves: *{start_m.get('saves') if start_m.get('saves') is not None else '0'}* ➡️ *N/A*\n"
+                    f"• 🔄 Shares: *{start_m.get('shares') if start_m.get('shares') is not None else '0'}* ➡️ *N/A*"
+                )
+                await safe_send_message(metric_report)
             success_count = sum(1 for r in results if r)
 
             if u_idx < total_urls and chat_id not in STOP_REQUESTED:

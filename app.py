@@ -316,34 +316,85 @@ def run_engagement_menu():
                     )
                     return res
 
-            tasks = [run_single_acc(acc, idx) for idx, acc in enumerate(exec_accounts[:-1])]
-            await asyncio.gather(*tasks)
+            batch_start_metrics = None
+            last_result = None
 
-            # Last account runs with metric tracking (start count vs end count)
-            last_acc = exec_accounts[-1]
-            last_idx = len(exec_accounts) - 1
-            print(f"\n{BOLD}[Video {u_idx}/{len(urls)} | Acc {last_idx+1}/{len(exec_accounts)}] 🚀 Launching LAST account {last_acc['id']} (Tracking Start & End Counts)...{RESET}")
-            comment_text = comment_choice
-            if comment_choice == "random":
-                comment_text = random.choice(load_comments())
+            if len(exec_accounts) == 1:
+                only_acc = exec_accounts[0]
+                print(f"\n{BOLD}[Video {u_idx}/{len(urls)} | Acc 1/1] 🚀 Launching {only_acc['id']} (Tracking Count Shifts)...{RESET}")
+                comment_text = comment_choice
+                if comment_choice == "random":
+                    comment_text = random.choice(load_comments())
 
-            last_result = await engage_post(
-                account=last_acc,
-                post_url=post_url,
-                do_like=do_like,
-                do_follow=do_follow,
-                comment_text=comment_text if do_comment else None,
-                do_share=do_share,
-                do_save=do_save,
-                do_repost=do_repost,
-                min_watch=watch_min,
-                max_watch=watch_max,
-                return_metrics=True
-            )
+                last_result = await engage_post(
+                    account=only_acc,
+                    post_url=post_url,
+                    do_like=do_like,
+                    do_follow=do_follow,
+                    comment_text=comment_text if do_comment else None,
+                    do_share=do_share,
+                    do_save=do_save,
+                    do_repost=do_repost,
+                    min_watch=watch_min,
+                    max_watch=watch_max,
+                    return_metrics=True
+                )
+                if isinstance(last_result, dict):
+                    batch_start_metrics = last_result.get("start_metrics")
+            else:
+                # 1. Launch first account to capture video starting baseline before actions
+                first_acc = exec_accounts[0]
+                print(f"\n{BOLD}[Video {u_idx}/{len(urls)} | Acc 1/{len(exec_accounts)}] 🚀 Launching FIRST account {first_acc['id']} (Capturing Baseline Counts)...{RESET}")
+                comment_text = comment_choice
+                if comment_choice == "random":
+                    comment_text = random.choice(load_comments())
+
+                first_res = await engage_post(
+                    account=first_acc,
+                    post_url=post_url,
+                    do_like=do_like,
+                    do_follow=do_follow,
+                    comment_text=comment_text if do_comment else None,
+                    do_share=do_share,
+                    do_save=do_save,
+                    do_repost=do_repost,
+                    min_watch=watch_min,
+                    max_watch=watch_max,
+                    return_metrics=True
+                )
+                if isinstance(first_res, dict):
+                    batch_start_metrics = first_res.get("start_metrics")
+
+                # 2. Launch intermediate accounts concurrently
+                if len(exec_accounts) > 2:
+                    tasks = [run_single_acc(acc, idx) for idx, acc in enumerate(exec_accounts[1:-1], 1)]
+                    await asyncio.gather(*tasks)
+
+                # 3. Launch last account to capture final end counts
+                last_acc = exec_accounts[-1]
+                last_idx = len(exec_accounts) - 1
+                print(f"\n{BOLD}[Video {u_idx}/{len(urls)} | Acc {last_idx+1}/{len(exec_accounts)}] 🚀 Launching LAST account {last_acc['id']} (Capturing Final Counts)...{RESET}")
+                comment_text = comment_choice
+                if comment_choice == "random":
+                    comment_text = random.choice(load_comments())
+
+                last_result = await engage_post(
+                    account=last_acc,
+                    post_url=post_url,
+                    do_like=do_like,
+                    do_follow=do_follow,
+                    comment_text=comment_text if do_comment else None,
+                    do_share=do_share,
+                    do_save=do_save,
+                    do_repost=do_repost,
+                    min_watch=watch_min,
+                    max_watch=watch_max,
+                    return_metrics=True
+                )
 
             # Display Engagement Metric Shift Report
             if isinstance(last_result, dict):
-                start_m = last_result.get("start_metrics") or {}
+                start_m = batch_start_metrics or last_result.get("start_metrics") or {}
                 end_m = last_result.get("end_metrics") or {}
                 print(f"\n{CYAN}========================================================")
                 print(f"  📊 VIDEO METRIC SHIFT REPORT [Video {u_idx}/{len(urls)}]")
@@ -493,34 +544,85 @@ def run_single_action_flow(action_type):
                     )
                     return res
 
-            tasks = [run_single_acc(acc, idx) for idx, acc in enumerate(exec_accounts[:-1])]
-            await asyncio.gather(*tasks)
+            batch_start_metrics = None
+            last_result = None
 
-            # Last account runs with metric tracking (start count vs end count)
-            last_acc = exec_accounts[-1]
-            last_idx = len(exec_accounts) - 1
-            print(f"\n{BOLD}[Video {u_idx}/{len(urls)} | Acc {last_idx+1}/{len(exec_accounts)}] 🚀 Launching LAST account {last_acc['id']} (Tracking Start & End Counts)...{RESET}")
-            c_text = None
-            if action_type == "comment":
-                c_text = random.choice(load_comments()) if comment_choice == "random" else comment_choice
+            if len(exec_accounts) == 1:
+                only_acc = exec_accounts[0]
+                print(f"\n{BOLD}[Video {u_idx}/{len(urls)} | Acc 1/1] 🚀 Launching {only_acc['id']} ({action_type}) (Tracking Count Shifts)...{RESET}")
+                c_text = None
+                if action_type == "comment":
+                    c_text = random.choice(load_comments()) if comment_choice == "random" else comment_choice
 
-            last_result = await engage_post(
-                account=last_acc,
-                post_url=post_url,
-                do_like=(action_type == "like"),
-                do_follow=(action_type == "follow"),
-                comment_text=c_text,
-                do_share=(action_type == "share"),
-                do_save=(action_type == "save"),
-                do_repost=(action_type == "repost"),
-                min_watch=watch_min,
-                max_watch=watch_max,
-                return_metrics=True
-            )
+                last_result = await engage_post(
+                    account=only_acc,
+                    post_url=post_url,
+                    do_like=(action_type == "like"),
+                    do_follow=(action_type == "follow"),
+                    comment_text=c_text,
+                    do_share=(action_type == "share"),
+                    do_save=(action_type == "save"),
+                    do_repost=(action_type == "repost"),
+                    min_watch=watch_min,
+                    max_watch=watch_max,
+                    return_metrics=True
+                )
+                if isinstance(last_result, dict):
+                    batch_start_metrics = last_result.get("start_metrics")
+            else:
+                # 1. Launch first account to capture video starting baseline before actions
+                first_acc = exec_accounts[0]
+                print(f"\n{BOLD}[Video {u_idx}/{len(urls)} | Acc 1/{len(exec_accounts)}] 🚀 Launching FIRST account {first_acc['id']} (Capturing Baseline Counts)...{RESET}")
+                c_text = None
+                if action_type == "comment":
+                    c_text = random.choice(load_comments()) if comment_choice == "random" else comment_choice
+
+                first_res = await engage_post(
+                    account=first_acc,
+                    post_url=post_url,
+                    do_like=(action_type == "like"),
+                    do_follow=(action_type == "follow"),
+                    comment_text=c_text,
+                    do_share=(action_type == "share"),
+                    do_save=(action_type == "save"),
+                    do_repost=(action_type == "repost"),
+                    min_watch=watch_min,
+                    max_watch=watch_max,
+                    return_metrics=True
+                )
+                if isinstance(first_res, dict):
+                    batch_start_metrics = first_res.get("start_metrics")
+
+                # 2. Launch intermediate accounts concurrently
+                if len(exec_accounts) > 2:
+                    tasks = [run_single_acc(acc, idx) for idx, acc in enumerate(exec_accounts[1:-1], 1)]
+                    await asyncio.gather(*tasks)
+
+                # 3. Launch last account to capture final end counts
+                last_acc = exec_accounts[-1]
+                last_idx = len(exec_accounts) - 1
+                print(f"\n{BOLD}[Video {u_idx}/{len(urls)} | Acc {last_idx+1}/{len(exec_accounts)}] 🚀 Launching LAST account {last_acc['id']} (Capturing Final Counts)...{RESET}")
+                c_text = None
+                if action_type == "comment":
+                    c_text = random.choice(load_comments()) if comment_choice == "random" else comment_choice
+
+                last_result = await engage_post(
+                    account=last_acc,
+                    post_url=post_url,
+                    do_like=(action_type == "like"),
+                    do_follow=(action_type == "follow"),
+                    comment_text=c_text,
+                    do_share=(action_type == "share"),
+                    do_save=(action_type == "save"),
+                    do_repost=(action_type == "repost"),
+                    min_watch=watch_min,
+                    max_watch=watch_max,
+                    return_metrics=True
+                )
 
             # Display Engagement Metric Shift Report
             if isinstance(last_result, dict):
-                start_m = last_result.get("start_metrics") or {}
+                start_m = batch_start_metrics or last_result.get("start_metrics") or {}
                 end_m = last_result.get("end_metrics") or {}
                 print(f"\n{CYAN}========================================================")
                 print(f"  📊 VIDEO METRIC SHIFT REPORT [Video {u_idx}/{len(urls)}]")

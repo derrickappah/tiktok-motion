@@ -793,6 +793,12 @@ async def engage_post(account, post_url, do_like=True, do_follow=False, comment_
                         await context.clear_cookies()
                     except Exception:
                         pass
+                    if return_metrics:
+                        try:
+                            result_payload["start_metrics"] = await get_post_metrics(page)
+                            result_payload["end_metrics"] = result_payload["start_metrics"]
+                        except Exception:
+                            pass
                     result_payload["session_expired"] = True
                     result_payload["success"] = False
                     return result_payload if return_metrics else False
@@ -815,22 +821,29 @@ async def engage_post(account, post_url, do_like=True, do_follow=False, comment_
                 except Exception:
                     pass
 
+            async def handle_expired_mid_session():
+                nonlocal session_is_expired
+                session_is_expired = True
+                if return_metrics:
+                    try:
+                        result_payload["end_metrics"] = await get_post_metrics(page)
+                    except Exception:
+                        pass
+                result_payload["session_expired"] = True
+                result_payload["success"] = False
+
             # 1. LIKE (Wait for action to complete and verify)
             if do_like:
                 await try_like(page, account_id)
                 if not is_account_logged_in(account_id):
-                    session_is_expired = True
-                    result_payload["session_expired"] = True
-                    result_payload["success"] = False
+                    await handle_expired_mid_session()
                     return result_payload if return_metrics else False
 
             # 2. FOLLOW CREATOR
             if do_follow:
                 await try_follow(page, account_id)
                 if not is_account_logged_in(account_id):
-                    session_is_expired = True
-                    result_payload["session_expired"] = True
-                    result_payload["success"] = False
+                    await handle_expired_mid_session()
                     return result_payload if return_metrics else False
 
             # 3. COMMENT
@@ -849,9 +862,7 @@ async def engage_post(account, post_url, do_like=True, do_follow=False, comment_
 
                 await try_comment(page, account_id, final_comment)
                 if not is_account_logged_in(account_id):
-                    session_is_expired = True
-                    result_payload["session_expired"] = True
-                    result_payload["success"] = False
+                    await handle_expired_mid_session()
                     return result_payload if return_metrics else False
 
             # 4. SHARE
@@ -862,18 +873,14 @@ async def engage_post(account, post_url, do_like=True, do_follow=False, comment_
             if do_save:
                 await try_save(page, account_id)
                 if not is_account_logged_in(account_id):
-                    session_is_expired = True
-                    result_payload["session_expired"] = True
-                    result_payload["success"] = False
+                    await handle_expired_mid_session()
                     return result_payload if return_metrics else False
 
             # 6. REPOST
             if do_repost:
                 await try_repost(page, account_id)
                 if not is_account_logged_in(account_id):
-                    session_is_expired = True
-                    result_payload["session_expired"] = True
-                    result_payload["success"] = False
+                    await handle_expired_mid_session()
                     return result_payload if return_metrics else False
 
             # Crucial: Wait for network requests to finish and confirm before closing tab
