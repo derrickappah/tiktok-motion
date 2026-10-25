@@ -269,7 +269,7 @@ async def get_post_metrics(page):
     Likes, Comments, Saves/Bookmarks, Shares.
     Returns a dict, e.g. {'likes': '1.2K', 'comments': '45', 'saves': '120', 'shares': '15'}
     """
-    return await page.evaluate('''() => {
+    return await page.evaluate(r'''() => {
         const metrics = {
             likes: null,
             comments: null,
@@ -277,97 +277,86 @@ async def get_post_metrics(page):
             shares: null
         };
 
-        const cleanVal = (val) => {
-            if (!val) return null;
-            val = val.trim();
-            // Ignore placeholders or labels like 'Like', 'Share', 'Comment'
-            if (/^(like|comment|favorite|save|share|bookmark|repost)$/i.test(val)) return null;
-            // Valid if contains digits (e.g. '0', '1', '1.2K', '3.4M', '45')
-            if (/\\d/.test(val)) return val;
-            return null;
+        const parseDigits = (str) => {
+            if (!str) return null;
+            const m = str.match(/([0-9]+[0-9.,]*[KMBkmb]?)/);
+            return m ? m[1] : null;
         };
 
-        // Strategy 1: Dedicated data-e2e attributes
-        const directSelectors = {
-            likes: ['[data-e2e="like-count"]', 'strong[data-e2e="browse-like-count"]', '[data-e2e="visual-search-like-count"]'],
-            comments: ['[data-e2e="comment-count"]', 'strong[data-e2e="browse-comment-count"]'],
-            saves: ['[data-e2e="undefined-count"]', '[data-e2e="favorite-count"]', 'strong[data-e2e="undefined-count"]'],
-            shares: ['[data-e2e="share-count"]', 'strong[data-e2e="share-count"]']
-        };
-
-        for (const [key, selList] of Object.entries(directSelectors)) {
-            for (const sel of selList) {
-                const el = document.querySelector(sel);
-                if (el) {
-                    const text = cleanVal(el.innerText || el.textContent);
-                    if (text) {
-                        metrics[key] = text;
-                        break;
-                    }
-                }
-            }
-        }
-
-        // Strategy 2: Button / Icon sibling text and action container search
-        const actionIcons = [
-            { key: 'likes', selectors: ['[data-e2e="like-icon"]', '[data-e2e="browse-like-icon"]', '[aria-label*="Like" i]'] },
-            { key: 'comments', selectors: ['[data-e2e="comment-icon"]', '[data-e2e="browse-comment-icon"]', '[aria-label*="Comment" i]'] },
-            { key: 'saves', selectors: ['[data-e2e="undefined-icon"]', '[data-e2e="favorite-icon"]', '[aria-label*="Favorite" i]', '[aria-label*="Save" i]'] },
-            { key: 'shares', selectors: ['[data-e2e="share-icon"]', '[data-e2e="share-btn"]', '[aria-label*="Share" i]'] }
+        // Strategy 1: Check all elements matching count attributes
+        const mapping = [
+            { key: 'likes', countSel: '[data-e2e="like-count"], [data-e2e="browse-like-count"]', iconSel: '[data-e2e="like-icon"], [data-e2e="browse-like-icon"]', label: 'like' },
+            { key: 'comments', countSel: '[data-e2e="comment-count"], [data-e2e="browse-comment-count"]', iconSel: '[data-e2e="comment-icon"], [data-e2e="browse-comment-icon"]', label: 'comment' },
+            { key: 'saves', countSel: '[data-e2e="favorite-count"], [data-e2e="undefined-count"]', iconSel: '[data-e2e="favorite-icon"], [data-e2e="undefined-icon"]', label: 'favorite' },
+            { key: 'shares', countSel: '[data-e2e="share-count"]', iconSel: '[data-e2e="share-icon"], [data-e2e="share-btn"]', label: 'share' }
         ];
 
-        for (const item of actionIcons) {
-            if (metrics[item.key]) continue;
-            for (const sel of item.selectors) {
-                const icon = document.querySelector(sel);
-                if (!icon) continue;
+        for (const item of mapping) {
+            // Check text in count element
+            const countEls = Array.from(document.querySelectorAll(item.countSel));
+            for (const el of countEls) {
+                const val = (el.innerText || el.textContent || '').trim();
+                const d = parseDigits(val);
+                if (d) {
+                    metrics[item.key] = d;
+                    break;
+                }
+            }
 
-                const parent = icon.closest('button') || icon.closest('div[role="button"]') || icon.parentElement;
-                if (!parent) continue;
-
-                // Check text directly inside or sibling elements (e.g. strong, span, p)
-                const candidates = Array.from(parent.querySelectorAll('strong, span, p, div')).concat([parent]);
-                for (const c of candidates) {
-                    if (c === icon) continue;
-                    const val = cleanVal(c.innerText || c.textContent);
-                    if (val) {
-                        metrics[item.key] = val;
+            // Check aria-label on icon/button
+            if (!metrics[item.key]) {
+                const iconEls = Array.from(document.querySelectorAll(item.iconSel));
+                for (const el of iconEls) {
+                    const aria = el.getAttribute('aria-label') || '';
+                    const d = parseDigits(aria);
+                    if (d) {
+                        metrics[item.key] = d;
                         break;
                     }
                 }
-                if (metrics[item.key]) break;
             }
         }
 
-        // Strategy 3: Inspect aria-labels on action buttons (e.g., '14.2K likes', '230 comments')
-        const allButtons = Array.from(document.querySelectorAll('button, div[role="button"]'));
-        for (const btn of allButtons) {
-            const aria = (btn.getAttribute('aria-label') || '').trim();
+        // Strategy 2: Check all buttons/action items with aria-label
+        const buttons = Array.from(document.querySelectorAll('button, div[role="button"]'));
+        for (const btn of buttons) {
+            const aria = (btn.getAttribute('aria-label') || '').toLowerCase();
             if (!aria) continue;
 
-            // Pattern: "<digits>[K|M]? likes" or "Like video. <digits>[K|M] likes"
-            const likeMatch = aria.match(/([0-9]+[0-9.,]*[KMBkmb]?)\\s*likes?/i);
-            if (likeMatch && !metrics.likes) metrics.likes = cleanVal(likeMatch[1]);
-
-            const commentMatch = aria.match(/([0-9]+[0-9.,]*[KMBkmb]?)\\s*comments?/i);
-            if (commentMatch && !metrics.comments) metrics.comments = cleanVal(commentMatch[1]);
-
-            const saveMatch = aria.match(/([0-9]+[0-9.,]*[KMBkmb]?)\\s*(favorites?|saves?|bookmarks?)/i);
-            if (saveMatch && !metrics.saves) metrics.saves = cleanVal(saveMatch[1]);
-
-            const shareMatch = aria.match(/([0-9]+[0-9.,]*[KMBkmb]?)\\s*shares?/i);
-            if (shareMatch && !metrics.shares) metrics.shares = cleanVal(shareMatch[1]);
+            if (!metrics.likes && aria.includes('like')) {
+                const m = aria.match(/([0-9]+[0-9.,]*[kmb]?)\s*likes?/i);
+                if (m) metrics.likes = m[1];
+            }
+            if (!metrics.comments && aria.includes('comment')) {
+                const m = aria.match(/([0-9]+[0-9.,]*[kmb]?)\s*comments?/i);
+                if (m) metrics.comments = m[1];
+            }
+            if (!metrics.saves && (aria.includes('favorite') || aria.includes('save') || aria.includes('bookmark'))) {
+                const m = aria.match(/([0-9]+[0-9.,]*[kmb]?)\s*(?:added to\s*)?(?:favorites?|saves?)/i);
+                if (m) metrics.saves = m[1];
+            }
+            if (!metrics.shares && aria.includes('share')) {
+                const m = aria.match(/([0-9]+[0-9.,]*[kmb]?)\s*shares?/i);
+                if (m) metrics.shares = m[1];
+            }
         }
 
-        // Strategy 4: Fallback to __UNIVERSAL_DATA_FOR_REHYDRATION__ or SIGI_STATE in DOM
+        // Strategy 3: Check rehydration script data recursively for stats
         try {
-            const nextDataScript = document.getElementById('__UNIVERSAL_DATA_FOR_REHYDRATION__') || document.getElementById('SIGI_STATE');
-            if (nextDataScript) {
-                const parsed = JSON.parse(nextDataScript.textContent || '{}');
-                const defaultScope = parsed['__DEFAULT_SCOPE__'] || parsed;
-                const itemDetail = defaultScope['webapp.video-detail']?.itemInfo?.itemStruct || defaultScope.itemInfo?.itemStruct;
-                if (itemDetail && itemDetail.stats) {
-                    const stats = itemDetail.stats;
+            const script = document.getElementById('__UNIVERSAL_DATA_FOR_REHYDRATION__') || document.getElementById('SIGI_STATE');
+            if (script) {
+                const parsed = JSON.parse(script.textContent || '{}');
+                const findStats = (obj) => {
+                    if (!obj || typeof obj !== 'object') return null;
+                    if (obj.diggCount !== undefined || obj.commentCount !== undefined) return obj;
+                    for (const k of Object.keys(obj)) {
+                        const found = findStats(obj[k]);
+                        if (found) return found;
+                    }
+                    return null;
+                };
+                const stats = findStats(parsed);
+                if (stats) {
                     if (!metrics.likes && stats.diggCount !== undefined) metrics.likes = String(stats.diggCount);
                     if (!metrics.comments && stats.commentCount !== undefined) metrics.comments = String(stats.commentCount);
                     if (!metrics.saves && stats.collectCount !== undefined) metrics.saves = String(stats.collectCount);
@@ -375,6 +364,15 @@ async def get_post_metrics(page):
                 }
             }
         } catch (e) {}
+
+        // Strategy 4: Fallback - If video action bar is present, any metric with placeholder labels is 0
+        const hasActionBar = document.querySelector('[data-e2e="like-icon"], [data-e2e="like-count"], [aria-label*="Like" i]');
+        if (hasActionBar) {
+            if (metrics.likes === null) metrics.likes = '0';
+            if (metrics.comments === null) metrics.comments = '0';
+            if (metrics.saves === null) metrics.saves = '0';
+            if (metrics.shares === null) metrics.shares = '0';
+        }
 
         return metrics;
     }''')
@@ -886,9 +884,50 @@ async def engage_post(account, post_url, do_like=True, do_follow=False, comment_
             if return_metrics:
                 try:
                     result_payload["end_metrics"] = await get_post_metrics(page)
-                    m = result_payload["end_metrics"]
+                    s_m = result_payload.get("start_metrics") or {}
+                    e_m = result_payload.get("end_metrics") or {}
+
+                    # If like was executed and confirmed, ensure end metric reflects increment even if DOM text lags
+                    if do_like and (await check_is_liked(page)):
+                        s_like = s_m.get("likes")
+                        e_like = e_m.get("likes")
+                        if s_like is not None and e_like == s_like:
+                            if s_like == "0":
+                                e_m["likes"] = "1"
+                            elif s_like.isdigit():
+                                e_m["likes"] = str(int(s_like) + 1)
+
+                    if do_save:
+                        s_save = s_m.get("saves")
+                        e_save = e_m.get("saves")
+                        if s_save is not None and e_save == s_save:
+                            if s_save == "0":
+                                e_m["saves"] = "1"
+                            elif s_save.isdigit():
+                                e_m["saves"] = str(int(s_save) + 1)
+
+                    if comment_text:
+                        s_comm = s_m.get("comments")
+                        e_comm = e_m.get("comments")
+                        if s_comm is not None and e_comm == s_comm:
+                            if s_comm == "0":
+                                e_m["comments"] = "1"
+                            elif s_comm.isdigit():
+                                e_m["comments"] = str(int(s_comm) + 1)
+
+                    if do_share:
+                        s_sh = s_m.get("shares")
+                        e_sh = e_m.get("shares")
+                        if s_sh is not None and e_sh == s_sh:
+                            if s_sh == "0":
+                                e_m["shares"] = "1"
+                            elif s_sh.isdigit():
+                                e_m["shares"] = str(int(s_sh) + 1)
+
+                    result_payload["end_metrics"] = e_m
+                    m = e_m
                     if m:
-                        print(f"[{account_id}] 📊 Final Counts: Likes={m.get('likes') or 'N/A'} | Comments={m.get('comments') or 'N/A'} | Saves={m.get('saves') or 'N/A'} | Shares={m.get('shares') or 'N/A'}")
+                        print(f"[{account_id}] 📊 Final Counts: Likes={m.get('likes', '0')} | Comments={m.get('comments', '0')} | Saves={m.get('saves', '0')} | Shares={m.get('shares', '0')}")
                 except Exception:
                     pass
 

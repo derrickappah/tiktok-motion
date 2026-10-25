@@ -510,10 +510,10 @@ async def run_engagement_pipeline(chat_id: int, context: ContextTypes.DEFAULT_TY
                 metric_report = (
                     f"📊 *VIDEO METRICS REPORT [Vid {u_idx}/{total_urls}]*\n"
                     f"`{current_url}`\n\n"
-                    f"• ❤️ Likes: *{start_m.get('likes') or 'N/A'}* ➡️ *{end_m.get('likes') or 'N/A'}*\n"
-                    f"• 💬 Comments: *{start_m.get('comments') or 'N/A'}* ➡️ *{end_m.get('comments') or 'N/A'}*\n"
-                    f"• 🔖 Saves: *{start_m.get('saves') or 'N/A'}* ➡️ *{end_m.get('saves') or 'N/A'}*\n"
-                    f"• 🔄 Shares: *{start_m.get('shares') or 'N/A'}* ➡️ *{end_m.get('shares') or 'N/A'}*"
+                    f"• ❤️ Likes: *{start_m.get('likes') if start_m.get('likes') is not None else '0'}* ➡️ *{end_m.get('likes') if end_m.get('likes') is not None else '0'}*\n"
+                    f"• 💬 Comments: *{start_m.get('comments') if start_m.get('comments') is not None else '0'}* ➡️ *{end_m.get('comments') if end_m.get('comments') is not None else '0'}*\n"
+                    f"• 🔖 Saves: *{start_m.get('saves') if start_m.get('saves') is not None else '0'}* ➡️ *{end_m.get('saves') if end_m.get('saves') is not None else '0'}*\n"
+                    f"• 🔄 Shares: *{start_m.get('shares') if start_m.get('shares') is not None else '0'}* ➡️ *{end_m.get('shares') if end_m.get('shares') is not None else '0'}*"
                 )
                 await safe_send_message(metric_report)
             else:
