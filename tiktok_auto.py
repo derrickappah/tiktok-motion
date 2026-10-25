@@ -43,6 +43,26 @@ DEFAULT_USER_AGENT = (
     "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
 )
 
+ACTIVE_CHROME_PROCS = set()
+
+def stop_all_active_automations():
+    """Immediately stops and terminates all active Chrome subprocesses launched by automations."""
+    global ACTIVE_CHROME_PROCS
+    for proc in list(ACTIVE_CHROME_PROCS):
+        try:
+            proc.terminate()
+            proc.wait(timeout=1.5)
+        except Exception:
+            try:
+                subprocess.run(["taskkill", "/F", "/PID", str(proc.pid), "/T"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except Exception:
+                pass
+    ACTIVE_CHROME_PROCS.clear()
+    try:
+        subprocess.run(["taskkill", "/F", "/IM", "chrome.exe"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
+
 def get_chrome_path():
     """Finds Google Chrome executable across standard, 32-bit, and user-level installations."""
     candidates = [
@@ -451,7 +471,8 @@ async def warmup_account(account, minutes=3):
         f"--user-data-dir={profile_path.resolve()}",
         "--start-maximized"
     ] + proxy_flag
-    subprocess.Popen(cmd)
+    proc = subprocess.Popen(cmd)
+    ACTIVE_CHROME_PROCS.add(proc)
     await asyncio.sleep(3.0)
 
 
@@ -500,7 +521,19 @@ async def warmup_account(account, minutes=3):
             print(f"[{account_id}] ❌ Warm-up interrupted: {e}")
             return False
         finally:
-            await context.close()
+            try:
+                await context.close()
+            except Exception:
+                pass
+            try:
+                proc.terminate()
+                proc.wait(timeout=2)
+            except Exception:
+                try:
+                    subprocess.run(["taskkill", "/F", "/PID", str(proc.pid), "/T"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                except Exception:
+                    pass
+            ACTIVE_CHROME_PROCS.discard(proc)
 
 
 def load_accounts():
@@ -697,6 +730,7 @@ async def engage_post(account, post_url, do_like=True, do_follow=False, comment_
         "--start-maximized"
     ] + proxy_flag
     proc = subprocess.Popen(cmd)
+    ACTIVE_CHROME_PROCS.add(proc)
     await asyncio.sleep(3.0)
 
     # Connect with retries to allow Chrome window to initialize cleanly
@@ -881,6 +915,7 @@ async def engage_post(account, post_url, do_like=True, do_follow=False, comment_
                     subprocess.run(["taskkill", "/F", "/PID", str(proc.pid), "/T"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 except Exception:
                     pass
+            ACTIVE_CHROME_PROCS.discard(proc)
             # Post-termination cleanup: Ensure session is wiped from disk without database file locks
             if session_is_expired:
                 mark_account_session_expired(account_id)

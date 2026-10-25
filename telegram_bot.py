@@ -28,6 +28,14 @@ PROFILES_DIR = BASE_DIR / "profiles"
 
 # Temporary memory store for user state: {chat_id: {"state": ..., "data": ...}}
 USER_STATES = {}
+ACTIVE_RUNNING_TASKS = {}  # chat_id -> asyncio.Task
+STOP_REQUESTED = set()     # set of chat_ids that requested stop
+
+
+def is_task_running(chat_id: int) -> bool:
+    """Checks if there is an active engagement or warm-up automation currently running for this chat."""
+    task = ACTIVE_RUNNING_TASKS.get(chat_id)
+    return task is not None and not task.done()
 
 
 def is_account_logged_in(account_id):
@@ -69,8 +77,15 @@ def is_authorized(update: Update) -> bool:
     return str(allowed_chat).strip() == user_id
 
 
-def build_main_menu():
-    keyboard = [
+def build_main_menu(chat_id: int = None):
+    keyboard = []
+    # If an automation is actively running, show a prominent STOP button right at the top
+    if chat_id and is_task_running(chat_id):
+        keyboard.append([
+            InlineKeyboardButton("🛑 STOP RUNNING AUTOMATION", callback_data="stop_pipeline")
+        ])
+
+    keyboard.extend([
         [
             InlineKeyboardButton("❤️ Like Only", callback_data="act_like"),
             InlineKeyboardButton("💬 Comment Only", callback_data="act_comment"),
@@ -95,8 +110,51 @@ def build_main_menu():
             InlineKeyboardButton("📊 Accounts Health", callback_data="cmd_status"),
             InlineKeyboardButton("⚙️ Settings / Delays", callback_data="cmd_settings"),
         ]
-    ]
+    ])
     return InlineKeyboardMarkup(keyboard)
+
+
+async def stop_current_automation(chat_id: int, context: ContextTypes.DEFAULT_TYPE, message_to_edit=None):
+    """Immediately stops and terminates all active automation tasks and Chrome processes."""
+    from tiktok_auto import stop_all_active_automations
+    STOP_REQUESTED.add(chat_id)
+    task = ACTIVE_RUNNING_TASKS.pop(chat_id, None)
+    if task and not task.done():
+        task.cancel()
+
+    # Immediately terminate any active Chrome browser processes
+    stop_all_active_automations()
+
+    stop_text = (
+        "🛑 *AUTOMATION STOPPED*\n\n"
+        "• All pending videos and accounts have been halted.\n"
+        "• All active browser sessions have been closed.\n\n"
+        "Choose an action below when you are ready to resume:"
+    )
+    if message_to_edit:
+        try:
+            await message_to_edit.edit_text(stop_text, reply_markup=build_main_menu(chat_id), parse_mode="Markdown")
+            return
+        except Exception:
+            pass
+    await context.bot.send_message(chat_id=chat_id, text=stop_text, reply_markup=build_main_menu(chat_id), parse_mode="Markdown")
+
+
+async def stop_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Command handler for /stop and /cancel."""
+    if not is_authorized(update):
+        await update.message.reply_text("⛔ Unauthorized user.")
+        return
+    chat_id = update.effective_chat.id
+    if is_task_running(chat_id):
+        await stop_current_automation(chat_id, context)
+    else:
+        from tiktok_auto import stop_all_active_automations
+        stop_all_active_automations()
+        await update.message.reply_text(
+            "ℹ️ No automation is currently running.\nAll browser sessions are cleared.",
+            reply_markup=build_main_menu(chat_id)
+        )
 
 
 async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -111,7 +169,7 @@ async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"📱 *Your Chat ID:* `{user_id}`\n\n"
         "👉 *Choose an action below* or simply paste any TikTok link directly into this chat!"
     )
-    await update.message.reply_text(welcome_text, reply_markup=build_main_menu(), parse_mode="Markdown")
+    await update.message.reply_text(welcome_text, reply_markup=build_main_menu(user_id), parse_mode="Markdown")
 
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -124,6 +182,10 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     data = query.data
     chat_id = update.effective_chat.id
+
+    if data == "stop_pipeline":
+        await stop_current_automation(chat_id, context, message_to_edit=query.message)
+        return
 
     if data.startswith("act_"):
         action_map = {
@@ -164,8 +226,15 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data.startswith("warm_"):
         duration = int(data.split("_")[1])
-        await query.edit_message_text(f"🧘 Starting FYP Warm-Up for *{duration} minutes* per account...\nWatch your PC run!", parse_mode="Markdown")
-        asyncio.create_task(run_warmup_pipeline(chat_id, context, duration))
+        STOP_REQUESTED.discard(chat_id)
+        stop_kb = InlineKeyboardMarkup([[InlineKeyboardButton("🛑 Stop Warm-Up", callback_data="stop_pipeline")]])
+        await query.edit_message_text(
+            f"🧘 Starting FYP Warm-Up for *{duration} minutes* per account...\nWatch your PC run!",
+            reply_markup=stop_kb,
+            parse_mode="Markdown"
+        )
+        task = asyncio.create_task(run_warmup_pipeline(chat_id, context, duration))
+        ACTIVE_RUNNING_TASKS[chat_id] = task
 
 
     elif data == "cmd_status":
@@ -244,7 +313,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         USER_STATES[chat_id] = {}
         await query.edit_message_text(
             "★ *TIKTOK MOTION BY DEE - TELEGRAM CONTROL* ★\n\nChoose an action below or send a TikTok link directly:",
-            reply_markup=build_main_menu(),
+            reply_markup=build_main_menu(chat_id),
             parse_mode="Markdown"
         )
 
@@ -256,6 +325,21 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     text = update.message.text.strip()
     chat_id = update.effective_chat.id
+
+    # Check for text stop / cancel command
+    if text.lower() in ["stop", "/stop", "cancel", "/cancel", "halt", "quit"]:
+        if is_task_running(chat_id):
+            await stop_current_automation(chat_id, context)
+            return
+        else:
+            from tiktok_auto import stop_all_active_automations
+            stop_all_active_automations()
+            await update.message.reply_text(
+                "ℹ️ No active automation is currently running.\nAll browser sessions are cleared.",
+                reply_markup=build_main_menu(chat_id)
+            )
+            return
+
     user_state = USER_STATES.get(chat_id, {})
     chosen_action = user_state.get("action", "all")
 
@@ -268,7 +352,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not urls:
         await update.message.reply_text(
             "⚠️ Please send valid TikTok video URL(s) (e.g., https://vt.tiktok.com/...).",
-            reply_markup=build_main_menu()
+            reply_markup=build_main_menu(chat_id)
         )
         return
 
@@ -293,6 +377,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(urls) > 5:
         url_summary += f"\n_...and {len(urls) - 5} more._"
 
+    STOP_REQUESTED.discard(chat_id)
+    stop_kb = InlineKeyboardMarkup([[InlineKeyboardButton("🛑 Stop Automation", callback_data="stop_pipeline")]])
+
     await update.message.reply_text(
         f"⚡ *Task Received!*\n\n"
         f"• *Queue Size:* {len(urls)} video(s)\n"
@@ -300,52 +387,40 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"• *Parallel Mode:* `{conc} accounts at once`\n\n"
         f"*Target Queue:*\n{url_summary}\n\n"
         f"Starting execution...",
+        reply_markup=stop_kb,
         parse_mode="Markdown"
     )
 
-    asyncio.create_task(run_engagement_pipeline(chat_id, context, urls, chosen_action))
+    task = asyncio.create_task(run_engagement_pipeline(chat_id, context, urls, chosen_action))
+    ACTIVE_RUNNING_TASKS[chat_id] = task
 
 
 
 async def run_engagement_pipeline(chat_id: int, context: ContextTypes.DEFAULT_TYPE, urls: list[str], action_type: str):
-    from tiktok_auto import load_accounts, engage_post
-    accounts = load_accounts()
-    active_accounts = [a for a in accounts if is_account_logged_in(a['id'])]
+    from tiktok_auto import load_accounts, engage_post, stop_all_active_automations
+    try:
+        accounts = load_accounts()
+        active_accounts = [a for a in accounts if is_account_logged_in(a['id'])]
 
-    if not active_accounts:
-        await context.bot.send_message(chat_id=chat_id, text="❌ No logged-in accounts found. Please log in via `motion.bat` first.", parse_mode="Markdown")
-        return
+        if not active_accounts:
+            await context.bot.send_message(chat_id=chat_id, text="❌ No logged-in accounts found. Please log in via `motion.bat` first.", parse_mode="Markdown")
+            return
 
-    config = get_config()
-    concurrency_limit = config.get("concurrency", 5)
+        config = get_config()
+        concurrency_limit = config.get("concurrency", 5)
 
-    do_like = action_type in ["like", "all"]
-    do_follow = action_type in ["follow"]
-    do_share = action_type in ["share", "all"]
-    do_save = action_type in ["save", "all"]
-    do_repost = action_type in ["repost", "all"]
-    comment_text = "ai" if action_type in ["comment", "all"] else None
+        do_like = action_type in ["like", "all"]
+        do_follow = action_type in ["follow"]
+        do_share = action_type in ["share", "all"]
+        do_save = action_type in ["save", "all"]
+        do_repost = action_type in ["repost", "all"]
+        comment_text = "ai" if action_type in ["comment", "all"] else None
 
-    total_urls = len(urls)
-    total_accs = len(active_accounts)
+        total_urls = len(urls)
+        total_accs = len(active_accounts)
 
-    sem = asyncio.Semaphore(concurrency_limit)
-
-    for u_idx, current_url in enumerate(urls, 1):
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text=f"▶️ *Processing Video [{u_idx}/{total_urls}]:*\n`{current_url}`\n(🚀 Running up to {min(concurrency_limit, total_accs)} accounts concurrently)",
-            parse_mode="Markdown"
-        )
-
-        # Filter active accounts dynamically in case any were marked expired on previous videos
-        exec_accounts = [a for a in active_accounts if is_account_logged_in(a['id'])]
-        if not exec_accounts:
-            await safe_send_message("⚠️ All accounts have expired sessions or are logged out. Please log in via `motion.bat`.")
-            break
-
-        random.shuffle(exec_accounts)
-        curr_total_accs = len(exec_accounts)
+        sem = asyncio.Semaphore(concurrency_limit)
+        stop_kb = InlineKeyboardMarkup([[InlineKeyboardButton("🛑 Stop Automation", callback_data="stop_pipeline")]])
 
         async def safe_send_message(text: str, reply_markup=None):
             try:
@@ -353,110 +428,162 @@ async def run_engagement_pipeline(chat_id: int, context: ContextTypes.DEFAULT_TY
             except Exception as e:
                 print(f"[Telegram Notice] Could not send message: {e}")
 
-        async def run_acc(acc, idx):
-            stagger = (idx % concurrency_limit) * 1.5
-            if stagger > 0:
-                await asyncio.sleep(stagger)
+        for u_idx, current_url in enumerate(urls, 1):
+            if chat_id in STOP_REQUESTED:
+                break
 
-            async with sem:
-                await safe_send_message(f"🚀 [Vid {u_idx}/{total_urls} | Acc {idx+1}/{curr_total_accs}] Starting `{acc['id']}`...")
-                res = await engage_post(
-                    account=acc,
-                    post_url=current_url,
-                    do_like=do_like,
-                    do_follow=do_follow,
-                    comment_text=comment_text,
-                    do_share=do_share,
-                    do_save=do_save,
-                    do_repost=do_repost
-                )
-                if not is_account_logged_in(acc['id']):
-                    await safe_send_message(f"⚠️ *Session Expired:* Account `{acc['id']}` session expired/invalidated! Marked as 'Needs Login'.")
-                return res
-
-        # Run all accounts except the last concurrently
-        results = []
-        if len(exec_accounts) > 1:
-            prev_results = await asyncio.gather(*[run_acc(acc, i) for i, acc in enumerate(exec_accounts[:-1])])
-            results.extend(prev_results)
-
-        # Last account runs with start/end count metric tracking
-        last_acc = exec_accounts[-1]
-        last_idx = len(exec_accounts) - 1
-        await safe_send_message(f"🚀 [Vid {u_idx}/{total_urls} | Acc {last_idx+1}/{curr_total_accs}] Starting LAST `{last_acc['id']}` (Capturing Count Shifts)...")
-        last_res = await engage_post(
-            account=last_acc,
-            post_url=current_url,
-            do_like=do_like,
-            do_follow=do_follow,
-            comment_text=comment_text,
-            do_share=do_share,
-            do_save=do_save,
-            do_repost=do_repost,
-            return_metrics=True
-        )
-
-        if not is_account_logged_in(last_acc['id']):
-            await safe_send_message(f"⚠️ *Session Expired:* Account `{last_acc['id']}` session expired/invalidated! Marked as 'Needs Login'.")
-
-        last_success = False
-        if isinstance(last_res, dict):
-            last_success = last_res.get("success", False)
-            start_m = last_res.get("start_metrics") or {}
-            end_m = last_res.get("end_metrics") or {}
-            metric_report = (
-                f"📊 *VIDEO METRICS REPORT [Vid {u_idx}/{total_urls}]*\n"
-                f"`{current_url}`\n\n"
-                f"• ❤️ Likes: *{start_m.get('likes') or 'N/A'}* ➡️ *{end_m.get('likes') or 'N/A'}*\n"
-                f"• 💬 Comments: *{start_m.get('comments') or 'N/A'}* ➡️ *{end_m.get('comments') or 'N/A'}*\n"
-                f"• 🔖 Saves: *{start_m.get('saves') or 'N/A'}* ➡️ *{end_m.get('saves') or 'N/A'}*\n"
-                f"• 🔄 Shares: *{start_m.get('shares') or 'N/A'}* ➡️ *{end_m.get('shares') or 'N/A'}*"
+            await safe_send_message(
+                f"▶️ *Processing Video [{u_idx}/{total_urls}]:*\n`{current_url}`\n(🚀 Running up to {min(concurrency_limit, total_accs)} accounts concurrently)",
+                reply_markup=stop_kb
             )
-            await safe_send_message(metric_report)
-        else:
-            last_success = bool(last_res)
 
-        results.append(last_success)
-        success_count = sum(1 for r in results if r)
+            # Filter active accounts dynamically in case any were marked expired on previous videos
+            exec_accounts = [a for a in active_accounts if is_account_logged_in(a['id'])]
+            if not exec_accounts:
+                await safe_send_message("⚠️ All accounts have expired sessions or are logged out. Please log in via `motion.bat`.")
+                break
 
-        if u_idx < total_urls:
-            await safe_send_message(f"⏸️ Video {u_idx} completed ({success_count}/{total_accs} success). Cooling down 5s before next video...")
-            await asyncio.sleep(5.0)
+            random.shuffle(exec_accounts)
+            curr_total_accs = len(exec_accounts)
 
-    done_msg = (
-        f"🎉 *Queue Completed!*\n\n"
-        f"• Videos processed: *{total_urls}*\n"
-        f"• Action: `{action_type.upper()}`\n"
-        f"• Concurrency: *{concurrency_limit} parallel*\n\n"
-        f"Ready for your next link(s)!"
-    )
-    await safe_send_message(done_msg, reply_markup=build_main_menu())
+            async def run_acc(acc, idx):
+                if chat_id in STOP_REQUESTED:
+                    return False
+                stagger = (idx % concurrency_limit) * 1.5
+                if stagger > 0:
+                    await asyncio.sleep(stagger)
+
+                if chat_id in STOP_REQUESTED:
+                    return False
+
+                async with sem:
+                    if chat_id in STOP_REQUESTED:
+                        return False
+                    await safe_send_message(f"🚀 [Vid {u_idx}/{total_urls} | Acc {idx+1}/{curr_total_accs}] Starting `{acc['id']}`...", reply_markup=stop_kb)
+                    res = await engage_post(
+                        account=acc,
+                        post_url=current_url,
+                        do_like=do_like,
+                        do_follow=do_follow,
+                        comment_text=comment_text,
+                        do_share=do_share,
+                        do_save=do_save,
+                        do_repost=do_repost
+                    )
+                    if not is_account_logged_in(acc['id']):
+                        await safe_send_message(f"⚠️ *Session Expired:* Account `{acc['id']}` session expired/invalidated! Marked as 'Needs Login'.")
+                    return res
+
+            # Run all accounts except the last concurrently
+            results = []
+            if len(exec_accounts) > 1:
+                prev_results = await asyncio.gather(*[run_acc(acc, i) for i, acc in enumerate(exec_accounts[:-1])])
+                results.extend(prev_results)
+
+            if chat_id in STOP_REQUESTED:
+                break
+
+            # Last account runs with start/end count metric tracking
+            last_acc = exec_accounts[-1]
+            last_idx = len(exec_accounts) - 1
+            await safe_send_message(f"🚀 [Vid {u_idx}/{total_urls} | Acc {last_idx+1}/{curr_total_accs}] Starting LAST `{last_acc['id']}` (Capturing Count Shifts)...", reply_markup=stop_kb)
+            last_res = await engage_post(
+                account=last_acc,
+                post_url=current_url,
+                do_like=do_like,
+                do_follow=do_follow,
+                comment_text=comment_text,
+                do_share=do_share,
+                do_save=do_save,
+                do_repost=do_repost,
+                return_metrics=True
+            )
+
+            if not is_account_logged_in(last_acc['id']):
+                await safe_send_message(f"⚠️ *Session Expired:* Account `{last_acc['id']}` session expired/invalidated! Marked as 'Needs Login'.")
+
+            last_success = False
+            if isinstance(last_res, dict):
+                last_success = last_res.get("success", False)
+                start_m = last_res.get("start_metrics") or {}
+                end_m = last_res.get("end_metrics") or {}
+                metric_report = (
+                    f"📊 *VIDEO METRICS REPORT [Vid {u_idx}/{total_urls}]*\n"
+                    f"`{current_url}`\n\n"
+                    f"• ❤️ Likes: *{start_m.get('likes') or 'N/A'}* ➡️ *{end_m.get('likes') or 'N/A'}*\n"
+                    f"• 💬 Comments: *{start_m.get('comments') or 'N/A'}* ➡️ *{end_m.get('comments') or 'N/A'}*\n"
+                    f"• 🔖 Saves: *{start_m.get('saves') or 'N/A'}* ➡️ *{end_m.get('saves') or 'N/A'}*\n"
+                    f"• 🔄 Shares: *{start_m.get('shares') or 'N/A'}* ➡️ *{end_m.get('shares') or 'N/A'}*"
+                )
+                await safe_send_message(metric_report)
+            else:
+                last_success = bool(last_res)
+
+            results.append(last_success)
+            success_count = sum(1 for r in results if r)
+
+            if u_idx < total_urls and chat_id not in STOP_REQUESTED:
+                await safe_send_message(f"⏸️ Video {u_idx} completed ({success_count}/{total_accs} success). Cooling down 5s before next video...", reply_markup=stop_kb)
+                await asyncio.sleep(5.0)
+
+        if chat_id not in STOP_REQUESTED:
+            done_msg = (
+                f"🎉 *Queue Completed!*\n\n"
+                f"• Videos processed: *{total_urls}*\n"
+                f"• Action: `{action_type.upper()}`\n"
+                f"• Concurrency: *{concurrency_limit} parallel*\n\n"
+                f"Ready for your next link(s)!"
+            )
+            await safe_send_message(done_msg, reply_markup=build_main_menu(chat_id))
+
+    except asyncio.CancelledError:
+        print(f"[Telegram Bot] Engagement pipeline cancelled for chat {chat_id}")
+        stop_all_active_automations()
+    finally:
+        ACTIVE_RUNNING_TASKS.pop(chat_id, None)
+        STOP_REQUESTED.discard(chat_id)
 
 
 async def run_warmup_pipeline(chat_id: int, context: ContextTypes.DEFAULT_TYPE, duration_mins: int):
-    from tiktok_auto import load_accounts, warmup_account
-    accounts = load_accounts()
-    active_accounts = [a for a in accounts if is_account_logged_in(a['id'])]
+    from tiktok_auto import load_accounts, warmup_account, stop_all_active_automations
+    try:
+        accounts = load_accounts()
+        active_accounts = [a for a in accounts if is_account_logged_in(a['id'])]
 
-    if not active_accounts:
-        await context.bot.send_message(chat_id=chat_id, text="❌ No logged-in accounts found.", parse_mode="Markdown")
-        return
+        if not active_accounts:
+            await context.bot.send_message(chat_id=chat_id, text="❌ No logged-in accounts found.", parse_mode="Markdown")
+            return
 
-    # Randomize warmup order across accounts
-    random.shuffle(active_accounts)
+        # Randomize warmup order across accounts
+        random.shuffle(active_accounts)
 
-    total = len(active_accounts)
-    for i, acc in enumerate(active_accounts):
-        await context.bot.send_message(chat_id=chat_id, text=f"🧘 [{i+1}/{total}] Warming up `{acc['id']}` for {duration_mins} mins...", parse_mode="Markdown")
-        await warmup_account(acc, minutes=duration_mins)
+        total = len(active_accounts)
+        stop_kb = InlineKeyboardMarkup([[InlineKeyboardButton("🛑 Stop Warm-Up", callback_data="stop_pipeline")]])
 
-    await context.bot.send_message(
-        chat_id=chat_id,
-        text=f"🎉 *Warm-Up Finished!*\nAll {total} accounts completed their FYP session.",
-        reply_markup=build_main_menu(),
-        parse_mode="Markdown"
-    )
+        for i, acc in enumerate(active_accounts):
+            if chat_id in STOP_REQUESTED:
+                break
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=f"🧘 [{i+1}/{total}] Warming up `{acc['id']}` for {duration_mins} mins...",
+                reply_markup=stop_kb,
+                parse_mode="Markdown"
+            )
+            await warmup_account(acc, minutes=duration_mins)
 
+        if chat_id not in STOP_REQUESTED:
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=f"🎉 *Warm-Up Finished!*\nAll {total} accounts completed their FYP session.",
+                reply_markup=build_main_menu(chat_id),
+                parse_mode="Markdown"
+            )
+    except asyncio.CancelledError:
+        print(f"[Telegram Bot] Warm-up pipeline cancelled for chat {chat_id}")
+        stop_all_active_automations()
+    finally:
+        ACTIVE_RUNNING_TASKS.pop(chat_id, None)
+        STOP_REQUESTED.discard(chat_id)
 
 
 def main():
@@ -486,6 +613,8 @@ def main():
         )
         app.add_handler(CommandHandler("start", start_cmd))
         app.add_handler(CommandHandler("menu", start_cmd))
+        app.add_handler(CommandHandler("stop", stop_cmd))
+        app.add_handler(CommandHandler("cancel", stop_cmd))
         app.add_handler(CallbackQueryHandler(button_callback))
         app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
         app.run_polling()
