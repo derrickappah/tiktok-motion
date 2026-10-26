@@ -5,15 +5,15 @@ echo "========================================================"
 echo "  TikTok Motion - Debian / Ubuntu Automated VPS Setup"
 echo "========================================================"
 
-# 1. Update apt repositories and install dependencies
+# 1. Update apt repositories and install base tools
 apt-get update -y
-apt-get install -y curl wget git python3 python3-pip python3-venv xvfb libxi6 libgconf-2-4 libnss3 libasound2 libgbm1 libgtk-3-0
+apt-get install -y curl wget git python3 python3-pip python3-venv xvfb
 
 # 2. Install official Google Chrome Stable
 if ! command -v google-chrome &> /dev/null && ! command -v google-chrome-stable &> /dev/null; then
     echo "[*] Installing Google Chrome Stable..."
     wget -q -O /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
-    apt-get install -y /tmp/chrome.deb || apt-get -f install -y
+    apt-get install -y /tmp/chrome.deb || apt --fix-broken install -y
     rm -f /tmp/chrome.deb
 fi
 
@@ -22,10 +22,11 @@ echo "[*] Setting up Python virtual environment..."
 python3 -m venv venv
 source venv/bin/activate
 
-# 4. Install requirements & playwright
+# 4. Install requirements & playwright with all OS dependencies
 pip install --upgrade pip
 pip install -r requirements.txt
 playwright install chromium
+playwright install-deps
 
 echo ""
 echo "========================================================"
