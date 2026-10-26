@@ -191,26 +191,79 @@ DEFAULT_USER_AGENT = (
 
 ACTIVE_CHROME_PROCS = set()
 
+def kill_process_tree(proc):
+    """Terminates a subprocess and its children cross-platform (Windows & Linux)."""
+    if proc is None:
+        return
+    try:
+        proc.terminate()
+        proc.wait(timeout=1.5)
+    except Exception:
+        pass
+    try:
+        import platform
+        if platform.system() == "Windows":
+            subprocess.run(["taskkill", "/F", "/PID", str(proc.pid), "/T"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        else:
+            proc.kill()
+    except Exception:
+        pass
+
+def kill_all_chrome_processes():
+    """Terminates leftover Chrome instances cleanly across Windows & Linux."""
+    import platform
+    try:
+        if platform.system() == "Windows":
+            subprocess.run(["taskkill", "/F", "/IM", "chrome.exe"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        else:
+            subprocess.run(["pkill", "-f", "chrome"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
+
+def get_linux_chrome_flags():
+    """Returns essential flags for running Chrome on Linux / VPS / Docker environments."""
+    import platform
+    if platform.system() != "Windows":
+        return [
+            "--no-sandbox",
+            "--disable-dev-shm-usage",
+            "--disable-gpu",
+            "--disable-software-rasterizer"
+        ]
+    return []
+
 def stop_all_active_automations():
     """Immediately stops and terminates all active Chrome subprocesses launched by automations."""
     global ACTIVE_CHROME_PROCS
     for proc in list(ACTIVE_CHROME_PROCS):
-        try:
-            proc.terminate()
-            proc.wait(timeout=1.5)
-        except Exception:
-            try:
-                subprocess.run(["taskkill", "/F", "/PID", str(proc.pid), "/T"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            except Exception:
-                pass
+        kill_process_tree(proc)
     ACTIVE_CHROME_PROCS.clear()
-    try:
-        subprocess.run(["taskkill", "/F", "/IM", "chrome.exe"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    except Exception:
-        pass
+    kill_all_chrome_processes()
 
 def get_chrome_path():
-    """Finds Google Chrome executable across standard, 32-bit, and user-level installations."""
+    """Finds Google Chrome or Chromium executable across Windows, Linux, and macOS."""
+    import platform
+    import shutil
+
+    # 1. Search PATH for standard binaries
+    for bin_name in ["google-chrome-stable", "google-chrome", "chromium-browser", "chromium", "chrome"]:
+        p = shutil.which(bin_name)
+        if p and os.path.exists(p):
+            return p
+
+    # 2. Linux / Debian known binary paths
+    linux_paths = [
+        "/usr/bin/google-chrome",
+        "/usr/bin/google-chrome-stable",
+        "/usr/bin/chromium",
+        "/usr/bin/chromium-browser",
+        "/snap/bin/chromium"
+    ]
+    for p in linux_paths:
+        if os.path.exists(p):
+            return p
+
+    # 3. Windows known binary paths
     candidates = [
         r"C:\Program Files\Google\Chrome\Application\chrome.exe",
         r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
@@ -221,7 +274,8 @@ def get_chrome_path():
     for p in candidates:
         if p and os.path.exists(p):
             return p
-    return r"C:\Program Files\Google\Chrome\Application\chrome.exe"
+
+    return "/usr/bin/google-chrome" if platform.system() != "Windows" else r"C:\Program Files\Google\Chrome\Application\chrome.exe"
 
 def load_proxies():
     """Reads proxies.txt and returns a cleaned list of proxy strings."""
@@ -599,7 +653,7 @@ async def warmup_account(account, minutes=3):
         print(f"[!] Google Chrome executable not found on system. Please ensure Chrome is installed.")
         return False
 
-    subprocess.run(["taskkill", "/F", "/IM", "chrome.exe"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    kill_all_chrome_processes()
     await asyncio.sleep(1.0)
 
     proxy_str = account.get("proxy") or get_random_proxy()
@@ -614,7 +668,7 @@ async def warmup_account(account, minutes=3):
         f"--remote-debugging-port=9222",
         f"--user-data-dir={profile_path.resolve()}",
         "--start-maximized"
-    ] + proxy_flag
+    ] + proxy_flag + get_linux_chrome_flags()
     proc = subprocess.Popen(cmd)
     ACTIVE_CHROME_PROCS.add(proc)
     await asyncio.sleep(3.0)
@@ -669,14 +723,7 @@ async def warmup_account(account, minutes=3):
                 await context.close()
             except Exception:
                 pass
-            try:
-                proc.terminate()
-                proc.wait(timeout=2)
-            except Exception:
-                try:
-                    subprocess.run(["taskkill", "/F", "/PID", str(proc.pid), "/T"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                except Exception:
-                    pass
+            kill_process_tree(proc)
             ACTIVE_CHROME_PROCS.discard(proc)
 
 
@@ -738,7 +785,7 @@ async def setup_login_session(account_id):
         return
 
     # Kill any dangling chrome processes so the user profile opens cleanly in real Chrome
-    subprocess.run(["taskkill", "/F", "/IM", "chrome.exe"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    kill_all_chrome_processes()
     await asyncio.sleep(1.0)
 
     # Launch real Google Chrome with the account's profile directly
@@ -747,7 +794,7 @@ async def setup_login_session(account_id):
         f"--user-data-dir={profile_path.resolve()}",
         "--start-maximized",
         "https://www.tiktok.com/login"
-    ]
+    ] + get_linux_chrome_flags()
     proc = subprocess.Popen(cmd)
 
     print("\n------------------------------------------------------------")
@@ -764,12 +811,8 @@ async def setup_login_session(account_id):
     # Gracefully allow Chrome to flush cookies to disk before closing
     print("[*] Saving session cookies to disk...")
     await asyncio.sleep(2.0)
-    try:
-        proc.terminate()
-        proc.wait(timeout=3)
-    except Exception:
-        subprocess.run(["taskkill", "/F", "/IM", "chrome.exe"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
+    kill_process_tree(proc)
+    kill_all_chrome_processes()
     await asyncio.sleep(1.5)
 
     # Check if session cookie was successfully written to the profile database
@@ -873,7 +916,7 @@ async def engage_post(account, post_url, do_like=True, do_follow=False, comment_
         f"--remote-debugging-port={cdp_port}",
         f"--user-data-dir={profile_path.resolve()}",
         "--start-maximized"
-    ] + proxy_flag
+    ] + proxy_flag + get_linux_chrome_flags()
     proc = subprocess.Popen(cmd)
     ACTIVE_CHROME_PROCS.add(proc)
     await asyncio.sleep(3.0)
@@ -1105,14 +1148,7 @@ async def engage_post(account, post_url, do_like=True, do_follow=False, comment_
                 await context.close()
             except Exception:
                 pass
-            try:
-                proc.terminate()
-                proc.wait(timeout=3)
-            except Exception:
-                try:
-                    subprocess.run(["taskkill", "/F", "/PID", str(proc.pid), "/T"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                except Exception:
-                    pass
+            kill_process_tree(proc)
             ACTIVE_CHROME_PROCS.discard(proc)
             # Post-termination cleanup: Ensure session is wiped from disk without database file locks
             if session_is_expired:
@@ -1147,7 +1183,7 @@ async def engage_via_live_chrome(post_url, do_like=True, do_follow=False, commen
             return False
 
         # Kill any hanging zombie chrome processes to ensure port 9222 binds properly
-        subprocess.run(["taskkill", "/F", "/IM", "chrome.exe"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        kill_all_chrome_processes()
         await asyncio.sleep(1.0)
 
         # Launch real Chrome with the exact saved account profile
@@ -1156,7 +1192,7 @@ async def engage_via_live_chrome(post_url, do_like=True, do_follow=False, commen
             f"--remote-debugging-port=9222",
             f"--user-data-dir={profile_path.resolve()}",
             "--start-maximized"
-        ]
+        ] + get_linux_chrome_flags()
         subprocess.Popen(cmd)
         print(f"[*] Waiting for Chrome to open...")
         await asyncio.sleep(3.5)

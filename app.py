@@ -1123,12 +1123,16 @@ def run_telegram_bot_flow():
 
     print(f"\n{GREEN}[*] Launching Telegram Listener in a new terminal window...{RESET}")
     import subprocess
-    cmd = [
-        "cmd.exe", "/c", "start", "TikTok Motion Telegram Bot",
-        sys.executable,
-        "telegram_bot.py"
-    ]
-    subprocess.Popen(cmd)
+    import platform
+    if platform.system() == "Windows":
+        cmd = [
+            "cmd.exe", "/c", "start", "TikTok Motion Telegram Bot",
+            sys.executable,
+            "telegram_bot.py"
+        ]
+        subprocess.Popen(cmd)
+    else:
+        subprocess.Popen([sys.executable, "telegram_bot.py"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
     print(f"{CYAN}[+] Bot is running in the background! Send links from your phone anytime.{RESET}")
     input("\nPress ENTER to return to menu...")
 
