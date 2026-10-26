@@ -1,18 +1,7 @@
-# Python cache
+# Python cache (build artifacts, not source code)
 __pycache__/
 *.pyc
 
-# Chrome browser profile sessions & cookies (Sensitive personal logins)
+# Chrome browser profile sessions (too large for GitHub + contain sensitive login cookies)
 profiles/
 chrome_profile/
-
-# API keys, personal tokens, and engagement history
-settings.json
-engaged_videos.json
-
-# Temporary screenshots & debug logs
-*.png
-debug_*.py
-inspect_*.py
-check_acc1.py
-scratch/

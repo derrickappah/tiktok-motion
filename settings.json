@@ -1,0 +1,15 @@
+{
+  "concurrency": 1,
+  "delay_min": 5,
+  "delay_max": 5,
+  "watch_time_min": 8,
+  "watch_time_max": 8,
+  "default_actions": {
+    "like": true,
+    "follow": false,
+    "comment": true
+  },
+  "gemini_api_key": "",
+  "telegram_bot_token": "8631803473:AAG_sHfA7xp-9pffyO0sBW_2LyCNMo2Dbw4",
+  "telegram_chat_id": ""
+}

@@ -1,0 +1,154 @@
+[
+  {
+    "tag": "BUTTON",
+    "e2e": "likes",
+    "aria": null,
+    "text": "Likes",
+    "className": "css-1ai3rqb-7937d88b--ButtonGroupItem e1eot1fg9",
+    "html": "<button data-e2e=\"likes\" id=\"inbox-tab-1\" tabindex=\"-1\" role=\"tab\" aria-selected=\"false\" aria-controls=\"header-inbox-list\" class=\"css-1ai3rqb-7937d88b--ButtonGroupItem e1eot1fg9\">Likes</button>"
+  },
+  {
+    "tag": "BUTTON",
+    "e2e": "comments",
+    "aria": null,
+    "text": "Comments",
+    "className": "css-1ai3rqb-7937d88b--ButtonGroupItem e1eot1fg9",
+    "html": "<button data-e2e=\"comments\" id=\"inbox-tab-2\" tabindex=\"-1\" role=\"tab\" aria-selected=\"false\" aria-controls=\"header-inbox-list\" class=\"css-1ai3rqb-7937d88b--ButtonGroupItem e1eot1fg9\">Comments</button>"
+  },
+  {
+    "tag": "P",
+    "e2e": "following-accounts",
+    "aria": null,
+    "text": "Following accounts",
+    "className": "TUXText TUXText--tiktok-sans TUXText--weight-medium css-u0d6t3-7937d88b--StyledT",
+    "html": "<p class=\"TUXText TUXText--tiktok-sans TUXText--weight-medium css-u0d6t3-7937d88b--StyledTUXText e1gw1eda0\" letter-spacing=\"0.09380000000000001\" data-e2e=\"following-accounts\" style=\"color: var(--ui-te"
+  },
+  {
+    "tag": "DIV",
+    "e2e": "like-icon",
+    "aria": "Like video\n likes",
+    "text": "Like",
+    "className": "css-11wvys0-7937d88b--ButtonActionItemV1 e12fjiyr3",
+    "html": "<div role=\"button\" tabindex=\"0\" aria-label=\"Like video\n likes\" aria-pressed=\"true\" data-e2e=\"like-icon\" data-key-interaction=\"action_like\" class=\"css-11wvys0-7937d88b--ButtonActionItemV1 e12fjiyr3\"><s"
+  },
+  {
+    "tag": "STRONG",
+    "e2e": "like-count",
+    "aria": null,
+    "text": "Like",
+    "className": "css-f1vcu2-7937d88b--StrongText e12fjiyr2",
+    "html": "<strong data-e2e=\"like-count\" class=\"css-f1vcu2-7937d88b--StrongText e12fjiyr2\">Like</strong>"
+  },
+  {
+    "tag": "DIV",
+    "e2e": "comment-icon",
+    "aria": "Read or add comments\n comments",
+    "text": "Comments",
+    "className": "css-11wvys0-7937d88b--ButtonActionItemV1 e12fjiyr3",
+    "html": "<div role=\"button\" tabindex=\"0\" aria-label=\"Read or add comments\n comments\" data-e2e=\"comment-icon\" data-key-interaction=\"action_comment\" class=\"css-11wvys0-7937d88b--ButtonActionItemV1 e12fjiyr3\"><sp"
+  },
+  {
+    "tag": "STRONG",
+    "e2e": "comment-count",
+    "aria": null,
+    "text": "Comments",
+    "className": "css-f1vcu2-7937d88b--StrongText e12fjiyr2",
+    "html": "<strong data-e2e=\"comment-count\" class=\"css-f1vcu2-7937d88b--StrongText e12fjiyr2\">Comments</strong>"
+  },
+  {
+    "tag": "DIV",
+    "e2e": "favorite-icon",
+    "aria": "Add to Favorites.  added to Favorites",
+    "text": "Favorites",
+    "className": "css-11wvys0-7937d88b--ButtonActionItemV1 e12fjiyr3",
+    "html": "<div role=\"button\" tabindex=\"0\" aria-label=\"Add to Favorites.  added to Favorites\" data-e2e=\"favorite-icon\" data-key-interaction=\"action_favorite\" class=\"css-11wvys0-7937d88b--ButtonActionItemV1 e12fj"
+  },
+  {
+    "tag": "STRONG",
+    "e2e": "favorite-count",
+    "aria": null,
+    "text": "Favorites",
+    "className": "css-f1vcu2-7937d88b--StrongText e12fjiyr2",
+    "html": "<strong data-e2e=\"favorite-count\" class=\"css-f1vcu2-7937d88b--StrongText e12fjiyr2\">Favorites</strong>"
+  },
+  {
+    "tag": "DIV",
+    "e2e": "share-icon",
+    "aria": "Share video\n1 shares",
+    "text": "Share",
+    "className": "css-11wvys0-7937d88b--ButtonActionItemV1 e12fjiyr3",
+    "html": "<div role=\"button\" tabindex=\"0\" aria-label=\"Share video\n1 shares\" aria-expanded=\"false\" data-e2e=\"share-icon\" data-key-interaction=\"action_share\" class=\"css-11wvys0-7937d88b--ButtonActionItemV1 e12fji"
+  },
+  {
+    "tag": "STRONG",
+    "e2e": "share-count",
+    "aria": null,
+    "text": "Share",
+    "className": "css-f1vcu2-7937d88b--StrongText e12fjiyr2",
+    "html": "<strong data-e2e=\"share-count\" class=\"css-f1vcu2-7937d88b--StrongText e12fjiyr2\">Share</strong>"
+  },
+  {
+    "tag": "DIV",
+    "e2e": "like-icon",
+    "aria": "Like video\n likes",
+    "text": "Like",
+    "className": "css-11wvys0-7937d88b--ButtonActionItemV1 e12fjiyr3",
+    "html": "<div role=\"button\" tabindex=\"0\" aria-label=\"Like video\n likes\" aria-pressed=\"false\" data-e2e=\"like-icon\" data-key-interaction=\"action_like\" class=\"css-11wvys0-7937d88b--ButtonActionItemV1 e12fjiyr3\"><"
+  },
+  {
+    "tag": "STRONG",
+    "e2e": "like-count",
+    "aria": null,
+    "text": "Like",
+    "className": "css-f1vcu2-7937d88b--StrongText e12fjiyr2",
+    "html": "<strong data-e2e=\"like-count\" class=\"css-f1vcu2-7937d88b--StrongText e12fjiyr2\">Like</strong>"
+  },
+  {
+    "tag": "DIV",
+    "e2e": "comment-icon",
+    "aria": "Read or add comments\n comments",
+    "text": "Comments",
+    "className": "css-11wvys0-7937d88b--ButtonActionItemV1 e12fjiyr3",
+    "html": "<div role=\"button\" tabindex=\"0\" aria-label=\"Read or add comments\n comments\" data-e2e=\"comment-icon\" data-key-interaction=\"action_comment\" class=\"css-11wvys0-7937d88b--ButtonActionItemV1 e12fjiyr3\"><sp"
+  },
+  {
+    "tag": "STRONG",
+    "e2e": "comment-count",
+    "aria": null,
+    "text": "Comments",
+    "className": "css-f1vcu2-7937d88b--StrongText e12fjiyr2",
+    "html": "<strong data-e2e=\"comment-count\" class=\"css-f1vcu2-7937d88b--StrongText e12fjiyr2\">Comments</strong>"
+  },
+  {
+    "tag": "DIV",
+    "e2e": "favorite-icon",
+    "aria": "Add to Favorites.  added to Favorites",
+    "text": "Favorites",
+    "className": "css-11wvys0-7937d88b--ButtonActionItemV1 e12fjiyr3",
+    "html": "<div role=\"button\" tabindex=\"0\" aria-label=\"Add to Favorites.  added to Favorites\" data-e2e=\"favorite-icon\" data-key-interaction=\"action_favorite\" class=\"css-11wvys0-7937d88b--ButtonActionItemV1 e12fj"
+  },
+  {
+    "tag": "STRONG",
+    "e2e": "favorite-count",
+    "aria": null,
+    "text": "Favorites",
+    "className": "css-f1vcu2-7937d88b--StrongText e12fjiyr2",
+    "html": "<strong data-e2e=\"favorite-count\" class=\"css-f1vcu2-7937d88b--StrongText e12fjiyr2\">Favorites</strong>"
+  },
+  {
+    "tag": "DIV",
+    "e2e": "share-icon",
+    "aria": "Share video\n146 shares",
+    "text": "Share",
+    "className": "css-11wvys0-7937d88b--ButtonActionItemV1 e12fjiyr3",
+    "html": "<div role=\"button\" tabindex=\"0\" aria-label=\"Share video\n146 shares\" aria-expanded=\"false\" data-e2e=\"share-icon\" data-key-interaction=\"action_share\" class=\"css-11wvys0-7937d88b--ButtonActionItemV1 e12f"
+  },
+  {
+    "tag": "STRONG",
+    "e2e": "share-count",
+    "aria": null,
+    "text": "Share",
+    "className": "css-f1vcu2-7937d88b--StrongText e12fjiyr2",
+    "html": "<strong data-e2e=\"share-count\" class=\"css-f1vcu2-7937d88b--StrongText e12fjiyr2\">Share</strong>"
+  }
+]
