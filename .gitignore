@@ -1,7 +1,39 @@
-# Python cache (build artifacts, not source code)
+# Python cache
 __pycache__/
 *.pyc
 
-# Chrome browser profile sessions (too large for GitHub + contain sensitive login cookies)
-profiles/
+# Ignore temporary browser caches inside profiles
+profiles/*/Default/Cache/
+profiles/*/Default/Code Cache/
+profiles/*/Default/GPUCache/
+profiles/*/Default/DawnWebGPUCache/
+profiles/*/Default/DawnGraphiteCache/
+profiles/*/BrowserMetrics/
+profiles/*/optimization_guide_model_store/
+profiles/*/component_crx_cache/
+profiles/*/WasmTtsEngine/
+profiles/*/Safe Browsing/
+profiles/*/GrShaderCache/
+profiles/*/OnDeviceHeadSuggestModel/
+profiles/*/GPUPersistentCache/
+profiles/*/ActorSafetyLists/
+profiles/*/hyphen-data/
+profiles/*/ZxcvbnData/
+profiles/*/Crashpad/
+
+# Ignore chrome_profile
 chrome_profile/
+
+# Ignore other accounts - only allow acc_1 to be tracked
+profiles/1/
+profiles/2/
+profiles/3/
+profiles/4/
+profiles/5/
+profiles/6/
+profiles/acc_10/
+profiles/acc_11/
+profiles/acc_12/
+profiles/acc_2/
+profiles/acc_3/
+profiles/acc_9/
