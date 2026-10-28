@@ -1,10 +1,37 @@
-# TikTok Multi-Account Automation
+# TikTok Multi-Account Automation & Motion Bot
 
-Python + Playwright script designed to manage multiple TikTok accounts from an `accounts.json` file. Each account retains its own persistent browser session (cookies, storage, and fingerprints) and can route through dedicated proxies.
+Python + Playwright automation designed to manage multiple TikTok accounts from an `accounts.json` file. Each account retains its own persistent browser session (cookies, storage, and fingerprints) and can route through dedicated proxies. Fully controllable remotely via Telegram Bot or locally via CLI.
 
 ---
 
-## 1. Setup
+## 💻 Quick Start by Platform
+
+### 🍎 On macOS (MacBooks):
+- **Telegram Bot (1-Click Finder)**: Double-click **`motion_mac.command`**
+- **Terminal CLI Menu**: Double-click **`menu_mac.command`**
+- **Or via Terminal**:
+  ```bash
+  ./setup_mac.sh    # First-time automatic setup
+  ./motion.sh       # Start Telegram Bot
+  ./motion.sh menu  # Start Terminal Menu
+  ```
+
+### 🪟 On Windows:
+- **Telegram Bot (1-Click)**: Double-click **`motion.bat`**
+- **Terminal CLI Menu**: Double-click **`menu.bat`**
+
+### 🐧 On Linux / Debian VPS:
+```bash
+./setup_vps.sh     # One-step automated environment setup
+./motion.sh        # Run bot directly
+./motion.sh bg     # Run 24/7 persistently in background
+./motion.sh status # View live status and log output
+./motion.sh stop   # Gracefully stop bot
+```
+
+---
+
+## 1. Setup Manually (Optional)
 
 ### Step A: Install Requirements
 ```bash

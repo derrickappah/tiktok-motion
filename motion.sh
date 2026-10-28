@@ -4,6 +4,8 @@
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 cd "$DIR"
 
+OS_NAME="$(uname -s)"
+
 # Activate venv if it exists
 if [ -f "venv/bin/activate" ]; then
     source venv/bin/activate
@@ -11,11 +13,22 @@ elif [ -f "/root/tiktok-motion/venv/bin/activate" ]; then
     source /root/tiktok-motion/venv/bin/activate
 fi
 
-# Check if DISPLAY is available, otherwise wrap in xvfb-run
-RUN_CMD="python3"
-if [ -z "$DISPLAY" ]; then
+# Locate Python binary
+PYTHON_BIN="python3"
+if [ -f "venv/bin/python" ]; then
+    PYTHON_BIN="venv/bin/python"
+elif command -v python3 &>/dev/null; then
+    PYTHON_BIN="python3"
+elif command -v python &>/dev/null; then
+    PYTHON_BIN="python"
+fi
+
+RUN_CMD="$PYTHON_BIN"
+
+# Linux headless display handling (Xvfb is only needed on Linux without a DISPLAY, never on macOS)
+if [ "$OS_NAME" = "Linux" ] && [ -z "$DISPLAY" ]; then
     if command -v xvfb-run &> /dev/null; then
-        RUN_CMD="xvfb-run -a -s '-screen 0 1920x1080x24' python3"
+        RUN_CMD="xvfb-run -a -s '-screen 0 1920x1080x24' $PYTHON_BIN"
     else
         echo "⚠️ Warning: No DISPLAY detected and Xvfb is not installed."
         echo "Install it with: apt-get install -y xvfb"
@@ -52,11 +65,13 @@ elif [ "$1" = "status" ]; then
 elif [ "$1" = "stop" ]; then
     echo "🛑 Stopping Telegram Bot..."
     pkill -f "telegram_bot.py" 2>/dev/null || true
+    pkill -f "Google Chrome" 2>/dev/null || true
+    pkill -f "Chromium" 2>/dev/null || true
     pkill -f "chrome" 2>/dev/null || true
     echo "✅ Bot and browser sessions stopped."
 
 else
     # Default action: automatically run the Telegram Bot directly!
-    echo "🚀 Starting TikTok Motion Telegram Bot with virtual display..."
+    echo "🚀 Starting TikTok Motion Telegram Bot..."
     eval "$RUN_CMD telegram_bot.py"
 fi

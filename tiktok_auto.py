@@ -210,11 +210,15 @@ def kill_process_tree(proc):
         pass
 
 def kill_all_chrome_processes():
-    """Terminates leftover Chrome instances cleanly across Windows & Linux."""
+    """Terminates leftover Chrome instances cleanly across Windows, Linux, and macOS."""
     import platform
     try:
-        if platform.system() == "Windows":
+        sys_plat = platform.system()
+        if sys_plat == "Windows":
             subprocess.run(["taskkill", "/F", "/IM", "chrome.exe"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        elif sys_plat == "Darwin":
+            subprocess.run(["pkill", "-f", "Google Chrome"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run(["pkill", "-f", "Chromium"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         else:
             subprocess.run(["pkill", "-f", "chrome"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except Exception:
@@ -223,7 +227,7 @@ def kill_all_chrome_processes():
 def get_linux_chrome_flags():
     """Returns essential flags for running Chrome on Linux / VPS / Docker environments."""
     import platform
-    if platform.system() != "Windows":
+    if platform.system() == "Linux":
         return [
             "--no-sandbox",
             "--disable-dev-shm-usage",
@@ -244,38 +248,83 @@ def get_chrome_path():
     """Finds Google Chrome or Chromium executable across Windows, Linux, and macOS."""
     import platform
     import shutil
+    import glob
 
-    # 1. Search PATH for standard binaries
+    sys_plat = platform.system()
+
+    # 1. macOS (Darwin) standard installation paths
+    if sys_plat == "Darwin":
+        mac_paths = [
+            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+            os.path.expanduser("~/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"),
+            "/Applications/Chromium.app/Contents/MacOS/Chromium",
+            os.path.expanduser("~/Applications/Chromium.app/Contents/MacOS/Chromium"),
+            "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
+            os.path.expanduser("~/Applications/Brave Browser.app/Contents/MacOS/Brave Browser"),
+            "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+            os.path.expanduser("~/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge")
+        ]
+        for p in mac_paths:
+            if os.path.exists(p):
+                return p
+
+        # Check Playwright cached Chromium on macOS
+        try:
+            pw_mac = glob.glob(os.path.expanduser("~/Library/Caches/ms-playwright/chromium-*/chrome-mac/Chromium.app/Contents/MacOS/Chromium"))
+            for p in pw_mac:
+                if os.path.exists(p):
+                    return p
+        except Exception:
+            pass
+
+    # 2. Search PATH for standard binaries
     for bin_name in ["google-chrome-stable", "google-chrome", "chromium-browser", "chromium", "chrome"]:
         p = shutil.which(bin_name)
         if p and os.path.exists(p):
             return p
 
-    # 2. Linux / Debian known binary paths
-    linux_paths = [
-        "/usr/bin/google-chrome",
-        "/usr/bin/google-chrome-stable",
-        "/usr/bin/chromium",
-        "/usr/bin/chromium-browser",
-        "/snap/bin/chromium"
-    ]
-    for p in linux_paths:
-        if os.path.exists(p):
-            return p
+    # 3. Linux / Debian known binary paths
+    if sys_plat == "Linux":
+        linux_paths = [
+            "/usr/bin/google-chrome",
+            "/usr/bin/google-chrome-stable",
+            "/usr/bin/chromium",
+            "/usr/bin/chromium-browser",
+            "/snap/bin/chromium"
+        ]
+        for p in linux_paths:
+            if os.path.exists(p):
+                return p
 
-    # 3. Windows known binary paths
-    candidates = [
-        r"C:\Program Files\Google\Chrome\Application\chrome.exe",
-        r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
-        os.path.expandvars(r"%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe"),
-        os.path.expandvars(r"%PROGRAMFILES%\Google\Chrome\Application\chrome.exe"),
-        os.path.expandvars(r"%PROGRAMFILES(X86)%\Google\Chrome\Application\chrome.exe")
-    ]
-    for p in candidates:
-        if p and os.path.exists(p):
-            return p
+        # Check Playwright cached Chromium on Linux
+        try:
+            pw_linux = glob.glob(os.path.expanduser("~/.cache/ms-playwright/chromium-*/chrome-linux/chrome"))
+            for p in pw_linux:
+                if os.path.exists(p):
+                    return p
+        except Exception:
+            pass
 
-    return "/usr/bin/google-chrome" if platform.system() != "Windows" else r"C:\Program Files\Google\Chrome\Application\chrome.exe"
+    # 4. Windows known binary paths
+    if sys_plat == "Windows":
+        candidates = [
+            r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+            r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+            os.path.expandvars(r"%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe"),
+            os.path.expandvars(r"%PROGRAMFILES%\Google\Chrome\Application\chrome.exe"),
+            os.path.expandvars(r"%PROGRAMFILES(X86)%\Google\Chrome\Application\chrome.exe")
+        ]
+        for p in candidates:
+            if p and os.path.exists(p):
+                return p
+
+    # Fallbacks
+    if sys_plat == "Darwin":
+        return "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+    elif sys_plat == "Windows":
+        return r"C:\Program Files\Google\Chrome\Application\chrome.exe"
+    else:
+        return "/usr/bin/google-chrome"
 
 def load_proxies():
     """Reads proxies.txt and returns a cleaned list of proxy strings."""
