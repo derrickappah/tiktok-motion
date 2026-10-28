@@ -719,9 +719,10 @@ async def warmup_account(account, minutes=3):
         chrome_exe,
         f"--remote-debugging-port=9222",
         f"--user-data-dir={profile_path.resolve()}",
-        "--start-maximized"
+        "--start-maximized",
+        "--log-level=3"
     ] + proxy_flag + get_linux_chrome_flags()
-    proc = subprocess.Popen(cmd)
+    proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     ACTIVE_CHROME_PROCS.add(proc)
     await asyncio.sleep(3.0)
 
@@ -845,9 +846,10 @@ async def setup_login_session(account_id):
         chrome_exe,
         f"--user-data-dir={profile_path.resolve()}",
         "--start-maximized",
+        "--log-level=3",
         "https://www.tiktok.com/login"
     ] + get_linux_chrome_flags()
-    proc = subprocess.Popen(cmd)
+    proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     print("\n------------------------------------------------------------")
     print(f"👉 A Google Chrome window has opened for account '{account_id}'.")
@@ -967,9 +969,10 @@ async def engage_post(account, post_url, do_like=True, do_follow=False, comment_
         chrome_exe,
         f"--remote-debugging-port={cdp_port}",
         f"--user-data-dir={profile_path.resolve()}",
-        "--start-maximized"
+        "--start-maximized",
+        "--log-level=3"
     ] + proxy_flag + get_linux_chrome_flags()
-    proc = subprocess.Popen(cmd)
+    proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     ACTIVE_CHROME_PROCS.add(proc)
     await asyncio.sleep(3.0)
 
@@ -1243,9 +1246,10 @@ async def engage_via_live_chrome(post_url, do_like=True, do_follow=False, commen
             chrome_exe,
             f"--remote-debugging-port=9222",
             f"--user-data-dir={profile_path.resolve()}",
-            "--start-maximized"
+            "--start-maximized",
+            "--log-level=3"
         ] + get_linux_chrome_flags()
-        subprocess.Popen(cmd)
+        subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         print(f"[*] Waiting for Chrome to open...")
         await asyncio.sleep(3.5)
 
