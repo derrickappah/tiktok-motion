@@ -16,8 +16,9 @@ if [ ! -d "venv" ]; then
     echo "[*] First-time setup detected. Setting up virtual environment..."
     python3 -m venv venv
     source venv/bin/activate
-    pip install --upgrade pip
-    pip install -r requirements.txt
+    python3 -m pip install --upgrade pip setuptools wheel
+    python3 -m pip install --prefer-binary --only-binary :all: cryptography 2>/dev/null || python3 -m pip install --prefer-binary cryptography
+    python3 -m pip install --prefer-binary -r requirements.txt
     playwright install chromium
 else
     source venv/bin/activate

@@ -34,10 +34,22 @@ echo "[*] Setting up Python virtual environment (venv)..."
 python3 -m venv venv
 source venv/bin/activate
 
-# 4. Install dependencies
-echo "[*] Installing Python dependencies..."
-pip install --upgrade pip
-pip install -r requirements.txt
+# Set Homebrew OpenSSL and pkg-config if installed (prevents Rust/Cargo build errors)
+if command -v brew &>/dev/null; then
+    BREW_OPENSSL="$(brew --prefix openssl@3 2>/dev/null || brew --prefix openssl 2>/dev/null || true)"
+    if [ -n "$BREW_OPENSSL" ] && [ -d "$BREW_OPENSSL" ]; then
+        export OPENSSL_DIR="$BREW_OPENSSL"
+        export PKG_CONFIG_PATH="$BREW_OPENSSL/lib/pkgconfig:$PKG_CONFIG_PATH"
+    fi
+fi
+
+# 4. Install dependencies (upgrade pip & setuptools first so pre-built binary wheels are used)
+echo "[*] Upgrading pip, setuptools, and wheel..."
+python3 -m pip install --upgrade pip setuptools wheel
+
+echo "[*] Installing Python dependencies (using pre-built wheels)..."
+python3 -m pip install --prefer-binary --only-binary :all: cryptography 2>/dev/null || python3 -m pip install --prefer-binary cryptography
+python3 -m pip install --prefer-binary -r requirements.txt
 
 # 5. Install Playwright browser
 echo "[*] Installing Playwright Chromium browser..."
