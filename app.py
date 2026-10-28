@@ -5,6 +5,8 @@
 Interactive Multi-Account Automation Suite for TikTok
 """
 
+from __future__ import annotations
+
 import os
 import sys
 import json
@@ -12,6 +14,7 @@ import time
 import random
 import asyncio
 import subprocess
+from typing import Optional, List, Dict, Any, Union
 from pathlib import Path
 
 # Paths

@@ -10,6 +10,8 @@ Usage:
      python tiktok_auto.py --url "https://www.tiktok.com/@user/video/123456789" --like --follow --comment "Great content!"
 """
 
+from __future__ import annotations
+
 import os
 import sys
 import json
@@ -19,6 +21,7 @@ import asyncio
 import argparse
 import re
 from datetime import datetime
+from typing import Optional, Tuple, Dict, Any, List, Union
 import urllib.request
 
 from pathlib import Path
@@ -42,7 +45,7 @@ ACCOUNTS_FILE = BASE_DIR / "accounts.json"
 PROXIES_FILE = BASE_DIR / "proxies.txt"
 ENGAGED_VIDEOS_FILE = BASE_DIR / "engaged_videos.json"
 
-def extract_tiktok_video_id(url: str) -> str | None:
+def extract_tiktok_video_id(url: str) -> Optional[str]:
     """Extracts numeric video ID from TikTok URL if present."""
     if not url:
         return None
@@ -94,7 +97,7 @@ def save_engaged_videos(data: dict):
     except Exception as e:
         print(f"[!] Could not save engaged videos: {e}")
 
-def is_video_already_engaged(url: str, resolve_short: bool = True) -> tuple[bool, dict | None]:
+def is_video_already_engaged(url: str, resolve_short: bool = True) -> Tuple[bool, Optional[dict]]:
     """
     Checks if a video URL or its canonical ID has already been engaged with.
     Returns (True, entry_data) if already engaged, else (False, None).

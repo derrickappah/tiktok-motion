@@ -3,11 +3,14 @@ TikTok Motion - Telegram Remote Trigger Bot
 Interactive Telegram Bot with inline keyboard buttons and full feature menu!
 """
 
+from __future__ import annotations
+
 import os
 import sys
 import json
 import random
 import asyncio
+from typing import Optional, List, Dict, Any, Union
 from pathlib import Path
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
