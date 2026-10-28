@@ -1,29 +1,36 @@
 @echo off
-title TikTok Motion by Dee
+title TikTok Motion Telegram Bot by Dee
 cls
+
+echo ===================================================
+echo     TikTok Motion - Telegram Bot Controller
+echo ===================================================
+echo Starting TikTok Motion Telegram Bot...
+echo Telegram commands and menu will be sent to your phone.
+echo.
 
 :: Check user Python312 installation where packages (playwright, etc.) are installed
 if exist "%LOCALAPPDATA%\Programs\Python\Python312\python.exe" (
-    "%LOCALAPPDATA%\Programs\Python\Python312\python.exe" app.py
+    "%LOCALAPPDATA%\Programs\Python\Python312\python.exe" telegram_bot.py
     goto end
 )
 
 if exist "C:\Users\DELL\AppData\Local\Programs\Python\Python312\python.exe" (
-    "C:\Users\DELL\AppData\Local\Programs\Python\Python312\python.exe" app.py
+    "C:\Users\DELL\AppData\Local\Programs\Python\Python312\python.exe" telegram_bot.py
     goto end
 )
 
 :: Try py launcher (usually points to global Python)
 where py >nul 2>nul
 if %ERRORLEVEL% EQU 0 (
-    py -3 app.py
+    py -3 telegram_bot.py
     goto end
 )
 
 :: Try default python in PATH
 where python >nul 2>nul
 if %ERRORLEVEL% EQU 0 (
-    python app.py
+    python telegram_bot.py
     goto end
 )
 

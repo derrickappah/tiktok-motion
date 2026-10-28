@@ -223,6 +223,17 @@ async def on_startup(application):
     """Pushes the interactive Telegram menu to the user as soon as the bot boots up."""
     config = get_config()
     chat_id = config.get("telegram_chat_id")
+    if not chat_id:
+        try:
+            updates = await application.bot.get_updates()
+            for u in reversed(updates):
+                if u.effective_chat and u.effective_chat.id:
+                    chat_id = u.effective_chat.id
+                    remember_chat_id(chat_id)
+                    break
+        except Exception:
+            pass
+
     if chat_id:
         try:
             welcome_text = (
