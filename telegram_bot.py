@@ -592,7 +592,14 @@ async def run_engagement_pipeline(chat_id: int, context: ContextTypes.DEFAULT_TY
         active_accounts = [a for a in accounts if is_account_logged_in(a['id'])]
 
         if not active_accounts:
-            await context.bot.send_message(chat_id=chat_id, text="❌ No logged-in accounts found. Please log in via `motion.bat` first.", parse_mode="Markdown")
+            msg = (
+                "❌ *No logged-in accounts found on this machine.*\n\n"
+                "👉 Log in to an account first:\n"
+                "• *macOS*: `./motion.sh login <id>` (or double-click `add_account_mac.command`)\n"
+                "• *Windows*: run `add_account.bat` or `motion.bat`\n"
+                "• *Check Status*: run `python add_account.py --list`"
+            )
+            await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
             return
 
         config = get_config()
@@ -837,7 +844,14 @@ async def run_warmup_pipeline(chat_id: int, context: ContextTypes.DEFAULT_TYPE, 
         active_accounts = [a for a in accounts if is_account_logged_in(a['id'])]
 
         if not active_accounts:
-            await context.bot.send_message(chat_id=chat_id, text="❌ No logged-in accounts found.", parse_mode="Markdown")
+            msg = (
+                "❌ *No logged-in accounts found on this machine.*\n\n"
+                "👉 Log in to an account first:\n"
+                "• *macOS*: `./motion.sh login <id>` (or double-click `add_account_mac.command`)\n"
+                "• *Windows*: run `add_account.bat` or `motion.bat`\n"
+                "• *Check Status*: run `python add_account.py --list`"
+            )
+            await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
             return
 
         # Randomize warmup order across accounts
