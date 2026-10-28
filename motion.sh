@@ -39,6 +39,14 @@ if [ "$1" = "menu" ] || [ "$1" = "cli" ] || [ "$1" = "app" ]; then
     echo "📋 Starting TikTok Motion Terminal Menu..."
     eval "$RUN_CMD app.py"
 
+elif [ "$1" = "add" ] || [ "$1" = "account" ] || [ "$1" = "accounts" ] || [ "$1" = "add_account" ]; then
+    shift
+    eval "$RUN_CMD add_account.py $@"
+
+elif [ "$1" = "login" ]; then
+    shift
+    eval "$RUN_CMD add_account.py --login-only $1"
+
 elif [ "$1" = "bg" ] || [ "$1" = "daemon" ]; then
     # Stop any old instance first
     pkill -f "telegram_bot.py" 2>/dev/null || true

@@ -8,22 +8,26 @@ Python + Playwright automation designed to manage multiple TikTok accounts from 
 
 ### 🍎 On macOS (MacBooks):
 - **Telegram Bot (1-Click Finder)**: Double-click **`motion_mac.command`**
+- **Add / Manage Accounts**: Double-click **`add_account_mac.command`** (or `./motion.sh add`)
 - **Terminal CLI Menu**: Double-click **`menu_mac.command`**
 - **Or via Terminal**:
   ```bash
   ./setup_mac.sh    # First-time automatic setup
   ./motion.sh       # Start Telegram Bot
+  ./motion.sh add   # Add / configure accounts
   ./motion.sh menu  # Start Terminal Menu
   ```
 
 ### 🪟 On Windows:
 - **Telegram Bot (1-Click)**: Double-click **`motion.bat`**
+- **Add / Manage Accounts**: Double-click **`add_account.bat`**
 - **Terminal CLI Menu**: Double-click **`menu.bat`**
 
 ### 🐧 On Linux / Debian VPS:
 ```bash
 ./setup_vps.sh     # One-step automated environment setup
 ./motion.sh        # Run bot directly
+./motion.sh add    # Add new accounts
 ./motion.sh bg     # Run 24/7 persistently in background
 ./motion.sh status # View live status and log output
 ./motion.sh stop   # Gracefully stop bot
