@@ -28,6 +28,27 @@ ACCOUNTS_FILE = BASE_DIR / "accounts.json"
 COMMENTS_FILE = BASE_DIR / "comments.txt"
 PROXIES_FILE = BASE_DIR / "proxies.txt"
 PROFILES_DIR = BASE_DIR / "profiles"
+BOT_PID_FILE = BASE_DIR / ".bot_pid"
+
+
+def register_bot_pid():
+    try:
+        with open(BOT_PID_FILE, "w", encoding="utf-8") as f:
+            f.write(str(os.getpid()))
+    except Exception:
+        pass
+
+
+def cleanup_bot_pid():
+    try:
+        if BOT_PID_FILE.exists():
+            BOT_PID_FILE.unlink(missing_ok=True)
+    except Exception:
+        pass
+
+
+import atexit
+atexit.register(cleanup_bot_pid)
 
 # Temporary memory store for user state: {chat_id: {"state": ..., "data": ...}}
 USER_STATES = {}
@@ -918,6 +939,8 @@ def main():
     print("  TikTok Motion Telegram Bot is LIVE with Interactive UI")
     print("  Open Telegram on your phone and tap Start!")
     print("========================================================")
+
+    register_bot_pid()
 
     try:
         app = (

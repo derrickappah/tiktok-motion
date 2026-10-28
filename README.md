@@ -7,26 +7,28 @@ Python + Playwright automation designed to manage multiple TikTok accounts from 
 ## 💻 Quick Start by Platform
 
 ### 🍎 On macOS (MacBooks):
-- **Telegram Bot (1-Click Finder)**: Double-click **`motion_mac.command`**
+- **Bot + Menu (1-Click Finder)**: Double-click **`motion_mac.command`** *(opens both Telegram Bot & Terminal Menu side-by-side)*
 - **Add / Manage Accounts**: Double-click **`add_account_mac.command`** (or `./motion.sh add`)
-- **Terminal CLI Menu**: Double-click **`menu_mac.command`**
+- **Terminal CLI Menu Only**: Double-click **`menu_mac.command`**
 - **Or via Terminal**:
   ```bash
   ./setup_mac.sh    # First-time automatic setup
-  ./motion.sh       # Start Telegram Bot
+  ./motion.sh       # Start both Telegram Bot + Terminal Menu together
+  ./motion.sh bot   # Start Telegram Bot only (foreground)
   ./motion.sh add   # Add / configure accounts
-  ./motion.sh menu  # Start Terminal Menu
+  ./motion.sh menu  # Start Terminal Menu only
   ```
 
 ### 🪟 On Windows:
-- **Telegram Bot (1-Click)**: Double-click **`motion.bat`**
+- **Bot + Menu (1-Click)**: Double-click **`motion.bat`** *(opens Telegram Bot in companion window + Terminal Menu)*
 - **Add / Manage Accounts**: Double-click **`add_account.bat`**
-- **Terminal CLI Menu**: Double-click **`menu.bat`**
+- **Terminal CLI Menu Only**: Double-click **`menu.bat`**
 
 ### 🐧 On Linux / Debian VPS:
 ```bash
 ./setup_vps.sh     # One-step automated environment setup
-./motion.sh        # Run bot directly
+./motion.sh        # Run bot + menu
+./motion.sh bot    # Run bot only
 ./motion.sh add    # Add new accounts
 ./motion.sh bg     # Run 24/7 persistently in background
 ./motion.sh status # View live status and log output

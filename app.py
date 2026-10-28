@@ -100,6 +100,34 @@ def is_account_logged_in(account_id):
         return (PROFILES_DIR / account_id).exists()
 
 
+def is_telegram_bot_running() -> bool:
+    """Checks whether the companion Telegram bot process is currently active."""
+    pid_file = BASE_DIR / ".bot_pid"
+    if not pid_file.exists():
+        if os.name != "nt":
+            try:
+                res = subprocess.run(["pgrep", "-f", "telegram_bot.py"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                return res.returncode == 0
+            except Exception:
+                pass
+        return False
+    try:
+        pid = int(pid_file.read_text(encoding="utf-8").strip())
+        if os.name == "nt":
+            import ctypes
+            PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+            h = ctypes.windll.kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+            if h:
+                ctypes.windll.kernel32.CloseHandle(h)
+                return True
+            return False
+        else:
+            os.kill(pid, 0)
+            return True
+    except Exception:
+        return False
+
+
 def load_comments():
     if not COMMENTS_FILE.exists():
         return ["Awesome video! 🔥", "Loved this one 🙌", "Great content, keep it up!"]
@@ -1196,8 +1224,10 @@ def main():
         accounts = load_accounts()
         ready_count = sum(1 for a in accounts if is_account_logged_in(a['id']))
         proxies = load_proxies()
+        bot_online = is_telegram_bot_running()
+        bot_badge = f"{GREEN}🟢 ONLINE{RESET}" if bot_online else f"{YELLOW}⚪ Stopped{RESET}"
 
-        print(f"  Accounts: {CYAN}{len(accounts)}{RESET} (Logged In: {GREEN}{ready_count}{RESET}) | Proxies in Pool: {MAGENTA}{len(proxies)}{RESET}\n")
+        print(f"  Accounts: {CYAN}{len(accounts)}{RESET} (Logged In: {GREEN}{ready_count}{RESET}) | Proxies: {MAGENTA}{len(proxies)}{RESET} | Telegram: {bot_badge}\n")
         print(f"  {BOLD}--- ACTIONS ON POST ---{RESET}")
         print(f"  {BOLD}[1]{RESET} ❤️  Like Post Only")
         print(f"  {BOLD}[2]{RESET} 💬 Comment on Post Only (Presets or AI)")

@@ -5,10 +5,10 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 cd "$DIR"
 
 echo "========================================================"
-echo "    TikTok Motion - Telegram Bot Controller (macOS)"
+echo "    TikTok Motion - Bot & Terminal Menu (macOS)"
 echo "========================================================"
-echo "Starting TikTok Motion Telegram Bot..."
-echo "Telegram commands and interactive menu will be sent to your phone."
+echo "[*] Starting Telegram Bot in companion mode..."
+echo "[*] Opening Interactive Menu in this window..."
 echo ""
 
 # Check if virtual environment exists; if not, run setup automatically
@@ -26,10 +26,30 @@ fi
 
 # Stop any leftover local bot instance to prevent Telegram conflict
 pkill -f "telegram_bot.py" 2>/dev/null || true
+if [ -f ".bot_pid" ]; then
+    kill $(cat .bot_pid) 2>/dev/null || true
+    rm -f .bot_pid 2>/dev/null || true
+fi
 sleep 0.5
 
-python3 telegram_bot.py
+# 1. Launch Telegram Bot in companion window or background
+if command -v osascript &>/dev/null; then
+    osascript -e 'tell application "Terminal" to do script "cd \"'"$DIR"'\" && [ -f venv/bin/activate ] && source venv/bin/activate; python3 telegram_bot.py"' 2>/dev/null || (python3 telegram_bot.py > bot.log 2>&1 &)
+else
+    python3 telegram_bot.py > bot.log 2>&1 &
+fi
+
+sleep 1
+
+# 2. Launch Interactive Terminal Menu directly in this window
+python3 app.py
+
+# When the menu exits, cleanly stop the companion bot
+pkill -f "telegram_bot.py" 2>/dev/null || true
+if [ -f ".bot_pid" ]; then
+    kill $(cat .bot_pid) 2>/dev/null || true
+    rm -f .bot_pid 2>/dev/null || true
+fi
 
 echo ""
-echo "Bot session stopped."
-read -p "Press Enter to exit..."
+echo "Session closed."

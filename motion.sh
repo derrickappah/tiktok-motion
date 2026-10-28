@@ -70,6 +70,13 @@ elif [ "$1" = "status" ]; then
         tail -n 15 bot.log
     fi
 
+elif [ "$1" = "bot" ] || [ "$1" = "telegram" ]; then
+    # Run only the Telegram Bot in foreground
+    pkill -f "telegram_bot.py" 2>/dev/null || true
+    sleep 0.5
+    echo "🚀 Starting TikTok Motion Telegram Bot..."
+    eval "$RUN_CMD telegram_bot.py"
+
 elif [ "$1" = "stop" ]; then
     echo "🛑 Stopping Telegram Bot..."
     pkill -f "telegram_bot.py" 2>/dev/null || true
@@ -79,10 +86,31 @@ elif [ "$1" = "stop" ]; then
     echo "✅ Bot and browser sessions stopped."
 
 else
-    # Default action: automatically run the Telegram Bot directly!
-    # Terminate any duplicate local background bot instance to avoid Conflict errors
+    # Default action: run both the Telegram Bot and the Terminal Menu together!
     pkill -f "telegram_bot.py" 2>/dev/null || true
+    if [ -f ".bot_pid" ]; then
+        kill $(cat .bot_pid) 2>/dev/null || true
+        rm -f .bot_pid 2>/dev/null || true
+    fi
     sleep 0.5
-    echo "🚀 Starting TikTok Motion Telegram Bot..."
-    eval "$RUN_CMD telegram_bot.py"
+
+    echo "🚀 Starting TikTok Motion Telegram Bot in companion mode..."
+    if [ "$OS_NAME" = "Darwin" ] && command -v osascript &>/dev/null && [ -n "$TERM_PROGRAM" ]; then
+        osascript -e 'tell application "Terminal" to do script "cd \"'"$DIR"'\" && [ -f venv/bin/activate ] && source venv/bin/activate; '"$RUN_CMD"' telegram_bot.py"' 2>/dev/null || ($RUN_CMD telegram_bot.py > bot.log 2>&1 &)
+    else
+        $RUN_CMD telegram_bot.py > bot.log 2>&1 &
+        echo "✅ Telegram Bot started in background (PID: $!) - logs streaming to bot.log"
+    fi
+
+    sleep 1
+    echo "📋 Opening TikTok Motion Terminal Menu..."
+    echo ""
+    eval "$RUN_CMD app.py"
+
+    # Stop companion bot when exiting the menu
+    pkill -f "telegram_bot.py" 2>/dev/null || true
+    if [ -f ".bot_pid" ]; then
+        kill $(cat .bot_pid) 2>/dev/null || true
+        rm -f .bot_pid 2>/dev/null || true
+    fi
 fi
