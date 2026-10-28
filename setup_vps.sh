@@ -7,7 +7,7 @@ echo "========================================================"
 
 # 1. Update apt repositories and install base tools
 apt-get update -y
-apt-get install -y curl wget git python3 python3-pip python3-venv xvfb
+apt-get install -y curl wget git python3 python3-full python3-pip python3-venv xvfb
 
 # 2. Install official Google Chrome Stable
 if ! command -v google-chrome &> /dev/null && ! command -v google-chrome-stable &> /dev/null; then
@@ -19,7 +19,7 @@ fi
 
 # 3. Setup Python Virtual Environment
 echo "[*] Setting up Python virtual environment..."
-python3 -m venv venv
+/usr/bin/python3 -m venv venv || python3 -m venv venv
 source venv/bin/activate
 
 # 4. Install requirements & playwright with all OS dependencies
@@ -28,10 +28,14 @@ pip install -r requirements.txt
 playwright install chromium
 playwright install-deps
 
+chmod +x motion.sh
+
 echo ""
 echo "========================================================"
 echo "  ✅ Setup Complete!"
-echo "  To launch interactive menu:    ./motion.sh"
-echo "  To launch Telegram bot directly: ./motion.sh bot"
-echo "  To run bot in background:      ./motion.sh bg"
+echo "  • Start Telegram Bot:      ./motion.sh"
+echo "  • Run 24/7 in Background:  ./motion.sh bg"
+echo "  • Check Status & Logs:     ./motion.sh status"
+echo "  • Stop Bot:                ./motion.sh stop"
+echo "  • Terminal Menu:           ./motion.sh menu"
 echo "========================================================"

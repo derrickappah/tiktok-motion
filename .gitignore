@@ -21,6 +21,9 @@ profiles/*/hyphen-data/
 profiles/*/ZxcvbnData/
 profiles/*/Crashpad/
 
+# Scratch directory
+scratch/
+
 # Ignore chrome_profile
 chrome_profile/
 

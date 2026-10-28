@@ -1,5 +1,3 @@
-2026/10/25-20:33:48.389 7f8c Reusing MANIFEST C:\Users\DELL\Documents\antigravity\keen-noether\profiles\acc_1\Default\Local Storage\leveldb/MANIFEST-000001
-2026/10/25-20:33:48.390 7f8c Recovering log #115
-2026/10/25-20:33:48.391 7f8c Level-0 table #117: started
-2026/10/25-20:33:48.397 7f8c Level-0 table #117: 22483 bytes OK
-2026/10/25-20:33:48.402 7f8c Delete type=0 #115
+2026/10/25-20:47:42.145 8bec Reusing MANIFEST C:\Users\DELL\Documents\antigravity\keen-noether\profiles\acc_1\Default\Local Storage\leveldb/MANIFEST-000001
+2026/10/25-20:47:42.147 8bec Recovering log #118
+2026/10/25-20:47:42.150 8bec Reusing old log C:\Users\DELL\Documents\antigravity\keen-noether\profiles\acc_1\Default\Local Storage\leveldb/000118.log 

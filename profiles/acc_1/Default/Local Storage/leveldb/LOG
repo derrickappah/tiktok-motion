@@ -1,3 +1,14 @@
-2026/10/25-20:47:42.145 8bec Reusing MANIFEST C:\Users\DELL\Documents\antigravity\keen-noether\profiles\acc_1\Default\Local Storage\leveldb/MANIFEST-000001
-2026/10/25-20:47:42.147 8bec Recovering log #118
-2026/10/25-20:47:42.150 8bec Reusing old log C:\Users\DELL\Documents\antigravity\keen-noether\profiles\acc_1\Default\Local Storage\leveldb/000118.log 
+2026/10/26-01:05:57.083 89f8 Reusing MANIFEST C:\Users\DELL\Documents\antigravity\keen-noether\profiles\acc_1\Default\Local Storage\leveldb/MANIFEST-000001
+2026/10/26-01:05:57.086 89f8 Recovering log #118
+2026/10/26-01:05:57.087 89f8 Level-0 table #120: started
+2026/10/26-01:05:57.095 89f8 Level-0 table #120: 48910 bytes OK
+2026/10/26-01:05:57.104 89f8 Delete type=0 #118
+2026/10/26-01:05:57.105 a5e8 Compacting 4@0 + 1@1 files
+2026/10/26-01:05:57.123 a5e8 Generated table #122@0: 80 keys, 263730 bytes
+2026/10/26-01:05:57.123 a5e8 Compacted 4@0 + 1@1 files => 263730 bytes
+2026/10/26-01:05:57.124 a5e8 compacted to: files[ 0 1 0 0 0 0 0 ]
+2026/10/26-01:05:57.126 a5e8 Delete type=2 #109
+2026/10/26-01:05:57.126 a5e8 Delete type=2 #112
+2026/10/26-01:05:57.126 a5e8 Delete type=2 #114
+2026/10/26-01:05:57.126 a5e8 Delete type=2 #117
+2026/10/26-01:05:57.126 a5e8 Delete type=2 #120

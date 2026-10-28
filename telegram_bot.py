@@ -206,12 +206,48 @@ async def clear_history_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+def remember_chat_id(chat_id: int):
+    """Automatically saves the active chat_id so the bot can push startup notifications directly."""
+    try:
+        cfg = get_config()
+        if str(cfg.get("telegram_chat_id") or "") != str(chat_id):
+            cfg["telegram_chat_id"] = str(chat_id)
+            with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+                json.dump(cfg, f, indent=2)
+            print(f"[+] Remembered active Telegram chat_id: {chat_id}")
+    except Exception:
+        pass
+
+
+async def on_startup(application):
+    """Pushes the interactive Telegram menu to the user as soon as the bot boots up."""
+    config = get_config()
+    chat_id = config.get("telegram_chat_id")
+    if chat_id:
+        try:
+            welcome_text = (
+                "🟢 *TikTok Motion Bot is Online & Ready!*\n\n"
+                "⚡ System is active and listening for your links.\n"
+                "👉 *Choose an action below* or paste any TikTok link directly into this chat:"
+            )
+            await application.bot.send_message(
+                chat_id=int(chat_id),
+                text=welcome_text,
+                reply_markup=build_main_menu(int(chat_id)),
+                parse_mode="Markdown"
+            )
+            print(f"[+] Sent startup notification to Telegram chat: {chat_id}")
+        except Exception as e:
+            print(f"[-] Could not send automatic startup message: {e}")
+
+
 async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_authorized(update):
         await update.message.reply_text("⛔ Unauthorized user.")
         return
 
     user_id = update.effective_chat.id
+    remember_chat_id(user_id)
     welcome_text = (
         "★ *TIKTOK MOTION BY DEE - TELEGRAM CONTROL* ★\n\n"
         "Control all your TikTok accounts directly from your phone!\n\n"
@@ -231,6 +267,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     data = query.data
     chat_id = update.effective_chat.id
+    remember_chat_id(chat_id)
 
     if data == "stop_pipeline":
         await stop_current_automation(chat_id, context, message_to_edit=query.message)
@@ -412,6 +449,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     text = update.message.text.strip()
     chat_id = update.effective_chat.id
+    remember_chat_id(chat_id)
 
     # Check for text stop / cancel command
     if text.lower() in ["stop", "/stop", "cancel", "/cancel", "halt", "quit"]:
@@ -839,6 +877,7 @@ def main():
         app = (
             ApplicationBuilder()
             .token(token)
+            .post_init(on_startup)
             .connect_timeout(30.0)
             .read_timeout(30.0)
             .write_timeout(30.0)
