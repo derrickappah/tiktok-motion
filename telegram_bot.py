@@ -124,7 +124,7 @@ def is_account_logged_in(account_id):
         "uid_tt", "uid_tt_ss", "multi_sids", "last_login_method", 
         "living_user_id", "passport_csrf_token"
     ]
-    if any(marker in n for n in names for marker in login_cookie_markers):
+    if any(marker in n for n in names for marker in login_markers):
         try:
             (profile_path / ".session_expired").unlink(missing_ok=True)
         except Exception:

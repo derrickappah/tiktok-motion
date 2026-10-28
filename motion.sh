@@ -89,7 +89,7 @@ else
     # Default action: run both the Telegram Bot and the Terminal Menu together!
     pkill -f "telegram_bot.py" 2>/dev/null || true
     if [ -f ".bot_pid" ]; then
-        kill $(cat .bot_pid) 2>/dev/null || true
+        kill $(cat .bot_pid 2>/dev/null) 2>/dev/null || true
         rm -f .bot_pid 2>/dev/null || true
     fi
     sleep 0.5
@@ -111,7 +111,7 @@ else
     # Stop companion bot when exiting the menu
     pkill -f "telegram_bot.py" 2>/dev/null || true
     if [ -f ".bot_pid" ]; then
-        kill $(cat .bot_pid) 2>/dev/null || true
+        kill $(cat .bot_pid 2>/dev/null) 2>/dev/null || true
         rm -f .bot_pid 2>/dev/null || true
     fi
 fi

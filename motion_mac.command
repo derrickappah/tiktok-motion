@@ -27,7 +27,7 @@ fi
 # Stop any leftover local bot instance to prevent Telegram conflict
 pkill -f "telegram_bot.py" 2>/dev/null || true
 if [ -f ".bot_pid" ]; then
-    kill $(cat .bot_pid) 2>/dev/null || true
+    kill $(cat .bot_pid 2>/dev/null) 2>/dev/null || true
     rm -f .bot_pid 2>/dev/null || true
 fi
 sleep 0.5
@@ -44,7 +44,7 @@ python3 app.py
 # When the menu exits, cleanly stop the companion bot
 pkill -f "telegram_bot.py" 2>/dev/null || true
 if [ -f ".bot_pid" ]; then
-    kill $(cat .bot_pid) 2>/dev/null || true
+    kill $(cat .bot_pid 2>/dev/null) 2>/dev/null || true
     rm -f .bot_pid 2>/dev/null || true
 fi
 
