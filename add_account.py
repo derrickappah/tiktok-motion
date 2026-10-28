@@ -62,24 +62,91 @@ def save_accounts(accounts: List[Dict[str, Any]]) -> bool:
         return False
 
 
+def check_account_health(account_id: str) -> tuple[bool, str]:
+    """
+    Checks if an account profile has a valid saved TikTok cookie session,
+    and returns (is_logged_in, reason_string).
+    Handles Chrome locked databases, WAL journals, and multiple cookie locations cross-platform.
+    """
+    profile_path = PROFILES_DIR / account_id
+    if not profile_path.exists():
+        if str(account_id).isdigit() and (PROFILES_DIR / f"acc_{account_id}").exists():
+            profile_path = PROFILES_DIR / f"acc_{account_id}"
+        elif str(account_id).startswith("acc_") and (PROFILES_DIR / account_id[4:]).exists():
+            profile_path = PROFILES_DIR / account_id[4:]
+        else:
+            return False, f"Folder 'profiles/{account_id}' does not exist"
+
+    cookie_candidates = [
+        profile_path / "Default" / "Network" / "Cookies",
+        profile_path / "Default" / "Cookies",
+        profile_path / "Network" / "Cookies",
+        profile_path / "Cookies",
+    ]
+    cookie_file = next((c for c in cookie_candidates if c.exists()), None)
+
+    if not cookie_file:
+        return False, "No Chrome cookies database file found in profile"
+
+    import sqlite3
+    import shutil
+    import tempfile
+
+    names = []
+    try:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_cookie = Path(tmp_dir) / "Cookies"
+            shutil.copy2(cookie_file, tmp_cookie)
+            wal_file = cookie_file.parent / (cookie_file.name + "-wal")
+            if wal_file.exists():
+                shutil.copy2(wal_file, Path(tmp_dir) / (tmp_cookie.name + "-wal"))
+            shm_file = cookie_file.parent / (cookie_file.name + "-shm")
+            if shm_file.exists():
+                shutil.copy2(shm_file, Path(tmp_dir) / (tmp_cookie.name + "-shm"))
+
+            conn = sqlite3.connect(str(tmp_cookie), timeout=2.0)
+            cursor = conn.cursor()
+            cursor.execute("SELECT name FROM cookies WHERE host_key LIKE '%tiktok.com%'")
+            names = [r[0].lower() for r in cursor.fetchall()]
+            conn.close()
+    except Exception:
+        try:
+            uri = f"file:{cookie_file.resolve()}?mode=ro&immutable=1"
+            conn = sqlite3.connect(uri, uri=True, timeout=2.0)
+            cursor = conn.cursor()
+            cursor.execute("SELECT name FROM cookies WHERE host_key LIKE '%tiktok.com%'")
+            names = [r[0].lower() for r in cursor.fetchall()]
+            conn.close()
+        except Exception:
+            pass
+
+    login_markers = [
+        "sessionid", "sessionid_ss", "sid_guard", "sid_tt", 
+        "uid_tt", "uid_tt_ss", "multi_sids", "last_login_method", 
+        "living_user_id", "passport_csrf_token"
+    ]
+    matched = [m for m in login_markers if any(m in n for n in names)]
+    if matched:
+        # Clear any stale .session_expired flag
+        try:
+            (profile_path / ".session_expired").unlink(missing_ok=True)
+        except Exception:
+            pass
+        return True, f"Logged In ({', '.join(matched[:2])})"
+
+    if (profile_path / ".session_expired").exists():
+        return False, "Session expired marker present (.session_expired)"
+
+    if names:
+        return False, f"TikTok cookies exist ({len(names)} total), but no sessionid"
+
+    return False, "No TikTok cookies found in profile"
+
+
 def is_account_logged_in(account_id: str) -> bool:
     """Checks if an account profile has a valid saved TikTok cookie session."""
-    profile_path = PROFILES_DIR / account_id
-    if (profile_path / ".session_expired").exists():
-        return False
-    cookie_file = profile_path / "Default" / "Network" / "Cookies"
-    if not cookie_file.exists():
-        return False
-    try:
-        import sqlite3
-        conn = sqlite3.connect(str(cookie_file))
-        cursor = conn.cursor()
-        cursor.execute("SELECT name FROM cookies WHERE host_key LIKE '%tiktok.com%'")
-        names = [r[0] for r in cursor.fetchall()]
-        conn.close()
-        return any("sessionid" in n.lower() or "sid_guard" in n.lower() or "uid_tt" in n.lower() for n in names)
-    except Exception:
-        return profile_path.exists()
+    logged_in, _ = check_account_health(account_id)
+    return logged_in
 
 
 def get_next_suggested_id(accounts: List[Dict[str, Any]]) -> str:
@@ -108,12 +175,12 @@ def list_accounts_status(accounts: List[Dict[str, Any]]):
         aid = acc.get("id", "N/A")
         name = acc.get("name", "")
         proxy = acc.get("proxy", "") or "Direct (No Proxy)"
-        logged_in = is_account_logged_in(aid)
+        logged_in, reason = check_account_health(aid)
         if logged_in:
             ready_count += 1
-            status_badge = f"{GREEN}🟢 READY (Logged In){RESET}"
+            status_badge = f"{GREEN}🟢 READY{RESET}"
         else:
-            status_badge = f"{RED}🔴 NEEDS LOGIN{RESET}"
+            status_badge = f"{RED}🔴 NEEDS LOGIN ({reason}){RESET}"
 
         print(f" {i:2d}. {BOLD}{aid:10s}{RESET} | Name: {name:15s} | Proxy: {proxy:25s} | Status: {status_badge}")
 

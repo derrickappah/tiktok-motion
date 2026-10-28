@@ -21,6 +21,10 @@ profiles/*/hyphen-data/
 profiles/*/ZxcvbnData/
 profiles/*/Crashpad/
 
+# Runtime pid and lock files
+.bot_pid
+*.lock
+
 # Scratch directory
 scratch/
 

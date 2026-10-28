@@ -80,24 +80,78 @@ def save_accounts(accounts):
 
 
 def is_account_logged_in(account_id):
-    """Checks if an account profile actually contains a logged-in TikTok session cookie."""
+    """
+    Checks if an account profile actually contains a logged-in TikTok session cookie.
+    Handles Chrome locked databases, WAL journals, and multiple cookie locations cross-platform.
+    Automatically clears stale .session_expired if login session cookies are detected.
+    """
     profile_path = PROFILES_DIR / account_id
+    if not profile_path.exists():
+        if str(account_id).isdigit() and (PROFILES_DIR / f"acc_{account_id}").exists():
+            profile_path = PROFILES_DIR / f"acc_{account_id}"
+        elif str(account_id).startswith("acc_") and (PROFILES_DIR / account_id[4:]).exists():
+            profile_path = PROFILES_DIR / account_id[4:]
+        else:
+            return False
+
+    cookie_candidates = [
+        profile_path / "Default" / "Network" / "Cookies",
+        profile_path / "Default" / "Cookies",
+        profile_path / "Network" / "Cookies",
+        profile_path / "Cookies",
+    ]
+    cookie_file = next((c for c in cookie_candidates if c.exists()), None)
+    if not cookie_file:
+        return False
+
+    import sqlite3
+    import shutil
+    import tempfile
+
+    names = []
+    try:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_cookie = Path(tmp_dir) / "Cookies"
+            shutil.copy2(cookie_file, tmp_cookie)
+            wal_file = cookie_file.parent / (cookie_file.name + "-wal")
+            if wal_file.exists():
+                shutil.copy2(wal_file, Path(tmp_dir) / (tmp_cookie.name + "-wal"))
+            shm_file = cookie_file.parent / (cookie_file.name + "-shm")
+            if shm_file.exists():
+                shutil.copy2(shm_file, Path(tmp_dir) / (tmp_cookie.name + "-shm"))
+
+            conn = sqlite3.connect(str(tmp_cookie), timeout=2.0)
+            cursor = conn.cursor()
+            cursor.execute("SELECT name FROM cookies WHERE host_key LIKE '%tiktok.com%'")
+            names = [r[0].lower() for r in cursor.fetchall()]
+            conn.close()
+    except Exception:
+        try:
+            uri = f"file:{cookie_file.resolve()}?mode=ro&immutable=1"
+            conn = sqlite3.connect(uri, uri=True, timeout=2.0)
+            cursor = conn.cursor()
+            cursor.execute("SELECT name FROM cookies WHERE host_key LIKE '%tiktok.com%'")
+            names = [r[0].lower() for r in cursor.fetchall()]
+            conn.close()
+        except Exception:
+            pass
+
+    login_markers = [
+        "sessionid", "sessionid_ss", "sid_guard", "sid_tt", 
+        "uid_tt", "uid_tt_ss", "multi_sids", "last_login_method", 
+        "living_user_id", "passport_csrf_token"
+    ]
+    if any(marker in n for n in names for marker in login_cookie_markers):
+        try:
+            (profile_path / ".session_expired").unlink(missing_ok=True)
+        except Exception:
+            pass
+        return True
+
     if (profile_path / ".session_expired").exists():
         return False
-    cookie_file = profile_path / "Default" / "Network" / "Cookies"
-    if not cookie_file.exists():
-        return False
-    try:
-        import sqlite3
-        conn = sqlite3.connect(str(cookie_file))
-        cursor = conn.cursor()
-        cursor.execute("SELECT name FROM cookies WHERE host_key LIKE '%tiktok.com%'")
-        names = [r[0] for r in cursor.fetchall()]
-        conn.close()
-        return any("sessionid" in n.lower() or "sid_guard" in n.lower() or "uid_tt" in n.lower() for n in names)
-    except Exception:
-        # Fallback to checking profile directory existence
-        return (PROFILES_DIR / account_id).exists()
+
+    return False
 
 
 def is_telegram_bot_running() -> bool:
