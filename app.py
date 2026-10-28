@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import sys
+import re
 import json
 import time
 import random
@@ -766,23 +767,42 @@ def run_single_action_flow(action_type):
 
 
 # -------------------------------------------------------------
-# Feature 2: Account Manager & Health Check
+# Feature 2: Account Manager & Login Hub (Merged)
 # -------------------------------------------------------------
 
+def get_next_suggested_id(accounts: List[Dict[str, Any]]) -> str:
+    """Computes the next logical account ID like acc_51 based on existing accounts."""
+    highest_num = 0
+    for acc in accounts:
+        aid = str(acc.get("id", ""))
+        m = re.search(r'(?:acc_)?(\d+)', aid)
+        if m:
+            val = int(m.group(1))
+            if val > highest_num:
+                highest_num = val
+    return f"acc_{highest_num + 1}"
+
+
 def account_manager_menu():
+    """Merged Account Manager & Login Hub: Add, configure, and log into accounts on one page."""
     while True:
         print_banner()
-        print(f"{BOLD}[2] 👤 ACCOUNT MANAGER & HEALTH CHECK{RESET}\n")
+        print(f"{BOLD}[10] 👤 ACCOUNT MANAGER & LOGIN HUB{RESET}\n")
 
         accounts = load_accounts()
         if not accounts:
             print(f"{YELLOW}No accounts registered yet.{RESET}\n")
         else:
-            print(f"{'#':<4} {'ID':<12} {'NAME':<18} {'PROXY':<25} {'STATUS':<15}")
-            print("─" * 75)
+            ready_count = 0
+            print(f"{'#':<4} {'ID':<12} {'NAME':<18} {'PROXY':<25} {'STATUS':<20}")
+            print("─" * 80)
             for i, acc in enumerate(accounts, 1):
                 logged_in = is_account_logged_in(acc['id'])
-                status = f"{GREEN}Ready (Logged In){RESET}" if logged_in else f"{RED}Needs Login{RESET}"
+                if logged_in:
+                    ready_count += 1
+                    status = f"{GREEN}🟢 Ready (Logged In){RESET}"
+                else:
+                    status = f"{RED}🔴 Needs Login{RESET}"
                 proxy_str = acc.get('proxy', '')
                 if not proxy_str:
                     proxy_display = f"{CYAN}None (Direct){RESET}"
@@ -790,40 +810,85 @@ def account_manager_menu():
                     proxy_display = proxy_str[:22] + "..." if len(proxy_str) > 22 else proxy_str
                 print(f"{i:<4} {acc['id']:<12} {acc.get('name', 'N/A')[:16]:<18} {proxy_display:<34} {status}")
 
-        print(f"\n{BOLD}Actions:{RESET}")
-        print("  [1] Add New Account")
-        print("  [2] Delete an Account")
-        print("  [3] Edit Account Proxy")
-        print("  [0] Back to Main Menu")
+            print(f"\nSummary: {GREEN}{ready_count} Logged In{RESET} / {RED}{len(accounts) - ready_count} Needs Login{RESET}")
 
-        choice = input(f"\n{YELLOW}Select an option:{RESET} ").strip()
+        print(f"\n{BOLD}Actions:{RESET}")
+        print("  [1] ➕ Add New Account (With instant Chrome login)")
+        print("  [2] 🔑 Log Into an Account (Opens Chrome)")
+        print("  [3] 🔁 Log Into All Pending Accounts (One-by-one)")
+        print("  [4] 🌐 Edit Account Proxy")
+        print("  [5] 🗑️ Delete an Account")
+        print("  [0] ⬅️ Back to Main Menu")
+
+        choice = input(f"\n{YELLOW}Select an option [0-5]:{RESET} ").strip()
 
         if choice == "1":
-            new_id = input("Enter new Account ID (e.g. acc_11): ").strip()
+            suggested_id = get_next_suggested_id(accounts)
+            print(f"\n{BOLD}--- Add New Account ---{RESET}")
+            print(f"Suggested Next ID: {GREEN}{suggested_id}{RESET}")
+            new_id = input(f"Enter Account ID [default: {suggested_id}]: ").strip()
             if not new_id:
-                continue
+                new_id = suggested_id
             if any(a['id'] == new_id for a in accounts):
-                print(f"{RED}[!] Account ID already exists.{RESET}")
+                print(f"{RED}[!] Account ID '{new_id}' already exists!{RESET}")
                 time.sleep(1.5)
                 continue
-            name = input("Enter nickname / display name: ").strip() or new_id
-            proxy = input("Enter proxy (optional, press ENTER to skip): ").strip()
+            default_name = f"Account {new_id.replace('acc_', '')}"
+            name = input(f"Enter nickname / label [default: {default_name}]: ").strip()
+            if not name:
+                name = default_name
+            proxy = input("Enter proxy (optional, press ENTER for none): ").strip()
             accounts.append({"id": new_id, "name": name, "proxy": proxy})
             save_accounts(accounts)
-            print(f"{GREEN}[+] Account {new_id} added!{RESET}")
-            time.sleep(1.2)
+            print(f"\n{GREEN}✅ Account '{new_id}' ({name}) saved to accounts.json!{RESET}")
+
+            # Prompt to log in immediately on the same page
+            do_login = input(f"\n👉 Open Chrome now to log into '{new_id}'? (Y/n) [default: Y]: ").strip().lower()
+            if do_login in ["", "y", "yes"]:
+                from tiktok_auto import setup_login_session
+                asyncio.run(setup_login_session(new_id))
 
         elif choice == "2":
-            del_id = input("Enter Account ID to delete: ").strip()
-            new_list = [a for a in accounts if a['id'] != del_id]
-            if len(new_list) < len(accounts):
-                save_accounts(new_list)
-                print(f"{GREEN}[+] Account {del_id} deleted.{RESET}")
+            if not accounts:
+                print(f"{RED}[!] No accounts registered yet.{RESET}")
+                time.sleep(1.5)
+                continue
+            target = input(f"\nEnter Account # (1-{len(accounts)}) or Account ID to log into: ").strip()
+            if not target:
+                continue
+            selected_id = None
+            if target.isdigit() and 1 <= int(target) <= len(accounts):
+                selected_id = accounts[int(target) - 1]["id"]
             else:
-                print(f"{RED}[!] Account ID not found.{RESET}")
-            time.sleep(1.2)
+                acc = next((a for a in accounts if a["id"].lower() == target.lower()), None)
+                if acc:
+                    selected_id = acc["id"]
+            if not selected_id:
+                print(f"{RED}[!] Account '{target}' not found.{RESET}")
+                time.sleep(1.5)
+                continue
+
+            print(f"\n{CYAN}[*] Opening Google Chrome for '{selected_id}'...{RESET}")
+            from tiktok_auto import setup_login_session
+            asyncio.run(setup_login_session(selected_id))
 
         elif choice == "3":
+            pending = [a for a in accounts if not is_account_logged_in(a["id"])]
+            if not pending:
+                print(f"\n{GREEN}🎉 All registered accounts are already logged in!{RESET}")
+                time.sleep(1.5)
+                continue
+            print(f"\n{CYAN}[*] Starting batch login for {len(pending)} pending account(s)...{RESET}")
+            from tiktok_auto import setup_login_session
+            for p_acc in pending:
+                pid = p_acc["id"]
+                print(f"\n{BOLD}Logging in: {pid} ({p_acc.get('name')}){RESET}")
+                asyncio.run(setup_login_session(pid))
+                cont = input("\nContinue to next account? (Y/n) [default: Y]: ").strip().lower()
+                if cont in ["n", "no"]:
+                    break
+
+        elif choice == "4":
             target_id = input("Enter Account ID to configure proxy: ").strip()
             target_acc = next((a for a in accounts if a['id'] == target_id), None)
             if target_acc:
@@ -836,38 +901,23 @@ def account_manager_menu():
                 print(f"{RED}[!] Account not found.{RESET}")
             time.sleep(1.2)
 
+        elif choice == "5":
+            del_id = input("Enter Account ID to delete: ").strip()
+            new_list = [a for a in accounts if a['id'] != del_id]
+            if len(new_list) < len(accounts):
+                save_accounts(new_list)
+                print(f"{GREEN}[+] Account {del_id} deleted.{RESET}")
+            else:
+                print(f"{RED}[!] Account ID not found.{RESET}")
+            time.sleep(1.2)
+
         elif choice == "0":
             break
 
 
-# -------------------------------------------------------------
-# Feature 3: Real Chrome Login Assistant
-# -------------------------------------------------------------
-
 def login_assistant_menu():
-    print_banner()
-    print(f"{BOLD}[3] 🔑 LOG INTO AN ACCOUNT (REAL CHROME){RESET}\n")
-
-    accounts = load_accounts()
-    if not accounts:
-        print(f"{RED}[!] No accounts registered yet.{RESET}")
-        input("\nPress ENTER to continue...")
-        return
-
-    for i, acc in enumerate(accounts, 1):
-        status = f"{GREEN}[Logged In]{RESET}" if is_account_logged_in(acc['id']) else f"{RED}[Not Logged In]{RESET}"
-        print(f"  [{i}] {acc['id']} - {acc.get('name', 'N/A')} {status}")
-
-    choice = input(f"\n{YELLOW}Select account to log into (1-{len(accounts)}):{RESET} ").strip()
-    if not choice.isdigit() or int(choice) < 1 or int(choice) > len(accounts):
-        return
-
-    selected_account = accounts[int(choice) - 1]
-    account_id = selected_account['id']
-
-    from tiktok_auto import setup_login_session
-    asyncio.run(setup_login_session(account_id))
-    input("\nPress ENTER to return to menu...")
+    """Alias for backwards compatibility - redirects to merged account manager."""
+    account_manager_menu()
 
 
 # -------------------------------------------------------------
@@ -1294,15 +1344,14 @@ def main():
         print(f"  {BOLD}[8]{RESET} 🧘 FYP Warm-up Mode (Surfs feed, builds trust)")
         print(f"  {BOLD}[9]{RESET} 📲 Start Telegram Remote Bot (Send links via phone)")
         print(f"\n  {BOLD}--- MANAGEMENT ---{RESET}")
-        print(f"  {BOLD}[10]{RESET} 📋 Account Manager & Health Check")
-        print(f"  {BOLD}[11]{RESET} 🔑 Log Into an Account (Real Chrome)")
-        print(f"  {BOLD}[12]{RESET} 💬 Comment Templates Library")
-        print(f"  {BOLD}[13]{RESET} ⚙️ Settings (Delays, AI Keys, Telegram)")
-        print(f"  {BOLD}[14]{RESET} 🌐 Proxy Pool Manager ({len(proxies)} loaded)")
-        print(f"  {BOLD}[15]{RESET} 📜 Engaged Videos History (View / Clear)")
+        print(f"  {BOLD}[10]{RESET} 👤 Account Manager & Login Hub (Add, Log In & Health)")
+        print(f"  {BOLD}[11]{RESET} 💬 Comment Templates Library")
+        print(f"  {BOLD}[12]{RESET} ⚙️ Settings (Delays, AI Keys, Telegram)")
+        print(f"  {BOLD}[13]{RESET} 🌐 Proxy Pool Manager ({len(proxies)} loaded)")
+        print(f"  {BOLD}[14]{RESET} 📜 Engaged Videos History (View / Clear)")
         print(f"  {BOLD}[0]{RESET} 🚪 Exit\n")
 
-        choice = input(f"{YELLOW}Select an option [0-15]:{RESET} ").strip()
+        choice = input(f"{YELLOW}Select an option [0-14]:{RESET} ").strip()
 
         if choice == "1":
             run_single_action_flow("like")
@@ -1325,14 +1374,12 @@ def main():
         elif choice == "10":
             account_manager_menu()
         elif choice == "11":
-            login_assistant_menu()
-        elif choice == "12":
             comment_library_menu()
-        elif choice == "13":
+        elif choice == "12":
             settings_menu()
-        elif choice == "14":
+        elif choice == "13":
             proxy_manager_menu()
-        elif choice == "15":
+        elif choice in ["14", "15"]:
             engaged_history_menu()
         elif choice == "0":
             print(f"\n{CYAN}Thanks for using TikTok Motion by Dee! Goodbye.{RESET}\n")
