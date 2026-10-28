@@ -72,6 +72,9 @@ elif [ "$1" = "stop" ]; then
 
 else
     # Default action: automatically run the Telegram Bot directly!
+    # Terminate any duplicate local background bot instance to avoid Conflict errors
+    pkill -f "telegram_bot.py" 2>/dev/null || true
+    sleep 0.5
     echo "🚀 Starting TikTok Motion Telegram Bot..."
     eval "$RUN_CMD telegram_bot.py"
 fi

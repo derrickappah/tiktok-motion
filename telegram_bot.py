@@ -869,6 +869,24 @@ async def run_warmup_pipeline(chat_id: int, context: ContextTypes.DEFAULT_TYPE, 
         STOP_REQUESTED.discard(chat_id)
 
 
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handles exceptions raised during Telegram polling and updates."""
+    from telegram.error import Conflict, NetworkError
+    if isinstance(context.error, Conflict):
+        print("\n" + "="*60)
+        print("  ⚠️ TELEGRAM INSTANCE CONFLICT DETECTED")
+        print("="*60)
+        print("Another instance of this Telegram Bot is currently running")
+        print("on another device (e.g. your Windows PC, VPS, or another tab).")
+        print("Telegram only permits ONE active bot connection per token at a time.")
+        print("👉 Stop the bot on the other device, then re-launch here.")
+        print("="*60 + "\n")
+    elif isinstance(context.error, NetworkError):
+        pass
+    else:
+        print(f"[!] Telegram notification: {context.error}")
+
+
 def main():
     config = get_config()
     token = config.get("telegram_bot_token")
@@ -895,6 +913,7 @@ def main():
             .pool_timeout(30.0)
             .build()
         )
+        app.add_error_handler(error_handler)
         app.add_handler(CommandHandler("start", start_cmd))
         app.add_handler(CommandHandler("menu", start_cmd))
         app.add_handler(CommandHandler("stop", stop_cmd))
@@ -903,7 +922,7 @@ def main():
         app.add_handler(CommandHandler("clear_history", clear_history_cmd))
         app.add_handler(CallbackQueryHandler(button_callback))
         app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
-        app.run_polling()
+        app.run_polling(drop_pending_updates=True)
     except Exception as e:
         print(f"\n[❌] Telegram Bot crashed: {e}")
         input("\nPress ENTER to exit...")

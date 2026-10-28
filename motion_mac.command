@@ -24,6 +24,10 @@ else
     source venv/bin/activate
 fi
 
+# Stop any leftover local bot instance to prevent Telegram conflict
+pkill -f "telegram_bot.py" 2>/dev/null || true
+sleep 0.5
+
 python3 telegram_bot.py
 
 echo ""
