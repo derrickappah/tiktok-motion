@@ -346,6 +346,204 @@ def remember_chat_id(chat_id: int):
         pass
 
 
+
+# ── SMM Panel Order Integration ──────────────────────────────────────────────
+PROCESSING_ORDERS = set()
+
+def update_supabase_order(order_id: str, new_status: str, error_msg: str = None) -> bool:
+    import urllib.request
+    from datetime import datetime
+    cfg = get_config()
+    url = cfg.get("supabase_url")
+    key = cfg.get("supabase_key")
+    if not url or not key:
+        return False
+
+    endpoint = f"{url.rstrip('/')}/rest/v1/orders?id=eq.{order_id}"
+    update_data = {
+        "status": new_status,
+        "last_status_check": datetime.utcnow().isoformat() + "Z"
+    }
+    if new_status in ["completed", "partial"]:
+        update_data["completed_at"] = datetime.utcnow().isoformat() + "Z"
+    if error_msg:
+        update_data["last_provider_error"] = str(error_msg)[:500]
+
+    payload = json.dumps(update_data).encode("utf-8")
+    req = urllib.request.Request(
+        endpoint,
+        data=payload,
+        headers={
+            "apikey": key,
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+            "Prefer": "return=representation"
+        },
+        method="PATCH"
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15) as res:
+            return res.status in [200, 204]
+    except Exception as e:
+        print(f"[!] Error updating order in Supabase: {e}")
+        return False
+
+
+async def execute_smm_order(order: dict, bot, chat_id):
+    order_id = order.get("id")
+    if not order_id:
+        return
+    short_id = order_id[:8]
+    raw_link = order.get("link", "").strip()
+    quantity = int(order.get("quantity") or 1)
+    service_name = order.get("service_name") or "TikTok Motion"
+    comments_field = (order.get("comments") or "").lower()
+
+    action = "save" if ("save" in comments_field or "save" in service_name.lower() or "favorite" in service_name.lower()) else "like"
+    action_emoji = "🔖" if action == "save" else "❤️"
+
+    print(f"\n{'='*60}")
+    print(f"[*] AUTO-TRIGGERING SMM ORDER #{short_id}")
+    print(f"[*] Action: {action.upper()} | Target: {raw_link} | Quantity: {quantity}")
+    print(f"{'='*60}")
+
+    if bot and chat_id:
+        try:
+            await bot.send_message(
+                chat_id=int(chat_id),
+                text=(
+                    f"⚡ <b>Automation Started for Order #{short_id}!</b>\n\n"
+                    f"{action_emoji} <b>Action:</b> <b>{action.upper()}</b>\n"
+                    f"🎯 <b>Target Post:</b> <a href=\"{raw_link}\">{raw_link}</a>\n"
+                    f"🔢 <b>Accounts Requested:</b> {quantity}\n\n"
+                    f"<i>Opening browser sessions on PC...</i>"
+                ),
+                parse_mode="HTML"
+            )
+        except Exception as e:
+            print(f"[-] Could not send Telegram alert: {e}")
+
+    from tiktok_auto import load_accounts, engage_post
+    accounts = load_accounts()
+    active_accounts = [a for a in accounts if is_account_logged_in(a['id'])]
+    if not active_accounts:
+        active_accounts = accounts
+
+    if not active_accounts:
+        err = "No accounts configured in accounts.json"
+        print(f"[!] {err}")
+        update_supabase_order(order_id, "failed", err)
+        if bot and chat_id:
+            try:
+                await bot.send_message(chat_id=int(chat_id), text=f"❌ <b>Order #{short_id} Failed:</b> {err}", parse_mode="HTML")
+            except Exception:
+                pass
+        PROCESSING_ORDERS.discard(order_id)
+        return
+
+    accounts_to_run = active_accounts[:quantity]
+    cfg = get_config()
+    delay_min = cfg.get("delay_min", 5)
+    delay_max = cfg.get("delay_max", 8)
+
+    success_count = 0
+    fail_count = 0
+
+    for idx, acc in enumerate(accounts_to_run, start=1):
+        acc_id = acc.get("id")
+        acc_name = acc.get("name", acc_id)
+        print(f"[{idx}/{len(accounts_to_run)}] Executing {action.upper()} on {acc_name} ({acc_id})...")
+        try:
+            res = await engage_post(
+                account=acc,
+                post_url=raw_link,
+                do_like=(action == "like"),
+                do_follow=False,
+                comment_text=None,
+                do_share=False,
+                do_save=(action == "save"),
+                do_repost=False
+            )
+            is_success = res is True or (isinstance(res, dict) and res.get("success") is True)
+            if is_success:
+                success_count += 1
+                print(f"[+] Account {acc_name} successfully performed {action.upper()}!")
+            else:
+                fail_count += 1
+                print(f"[-] Account {acc_name} failed {action.upper()}.")
+        except Exception as e:
+            fail_count += 1
+            print(f"[!] Exception on {acc_name}: {e}")
+
+        if idx < len(accounts_to_run):
+            wait_sec = random.randint(delay_min, max(delay_min, delay_max))
+            print(f"[*] Sleeping {wait_sec}s before next account...")
+            await asyncio.sleep(wait_sec)
+
+    final_status = "completed" if success_count >= len(accounts_to_run) else ("partial" if success_count > 0 else "failed")
+    update_supabase_order(order_id, final_status)
+    PROCESSING_ORDERS.discard(order_id)
+
+    status_icon = "✅" if final_status == "completed" else "⚠️" if final_status == "partial" else "❌"
+    print(f"\n{status_icon} ORDER #{short_id} FINISHED: {final_status.upper()} ({success_count}/{len(accounts_to_run)} succeeded)")
+
+    if bot and chat_id:
+        try:
+            await bot.send_message(
+                chat_id=int(chat_id),
+                text=(
+                    f"{status_icon} <b>Automation Finished for Order #{short_id}!</b>\n\n"
+                    f"{action_emoji} <b>Action:</b> <b>{action.upper()}</b>\n"
+                    f"📊 <b>Delivered:</b> <b>{success_count} / {len(accounts_to_run)}</b> accounts\n"
+                    f"🏆 <b>Status:</b> <code>{final_status.upper()}</code>\n"
+                    f"🔗 <b>Target:</b> <a href=\"{raw_link}\">{raw_link}</a>"
+                ),
+                parse_mode="HTML"
+            )
+        except Exception as e:
+            print(f"[-] Could not send completion alert: {e}")
+
+
+async def supabase_order_poller(application):
+    import urllib.request
+    print("[*] SMM Order Watcher is active! Polling for new orders every 5s...")
+    while True:
+        try:
+            cfg = get_config()
+            sb_url = cfg.get("supabase_url")
+            sb_key = cfg.get("supabase_key")
+            chat_id = cfg.get("telegram_chat_id")
+            if sb_url and sb_key:
+                endpoint = f"{sb_url.rstrip('/')}/rest/v1/orders?dynamic_provider=eq.tiktok_motion&status=eq.processing&order=created_at.asc&limit=5"
+                req = urllib.request.Request(
+                    endpoint,
+                    headers={
+                        "apikey": sb_key,
+                        "Authorization": f"Bearer {sb_key}",
+                        "Content-Type": "application/json"
+                    }
+                )
+                def fetch_orders():
+                    try:
+                        with urllib.request.urlopen(req, timeout=10) as r:
+                            if r.status == 200:
+                                return json.loads(r.read().decode("utf-8"))
+                    except Exception:
+                        pass
+                    return []
+
+                orders = await asyncio.to_thread(fetch_orders)
+                for o in orders:
+                    oid = o.get("id")
+                    if oid and oid not in PROCESSING_ORDERS:
+                        PROCESSING_ORDERS.add(oid)
+                        asyncio.create_task(execute_smm_order(o, application.bot, chat_id))
+        except Exception as e:
+            print(f"[!] Error in SMM Order Watcher: {e}")
+
+        await asyncio.sleep(5)
+
+
 async def on_startup(application):
     """Pushes the interactive Telegram menu to the user as soon as the bot boots up."""
     config = get_config()
@@ -378,6 +576,9 @@ async def on_startup(application):
         except Exception as e:
             print(f"[-] Could not send automatic startup message: {e}")
 
+    asyncio.create_task(supabase_order_poller(application))
+    print("[+] SMM Panel background order watcher launched!")
+
 
 async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_authorized(update):
@@ -406,6 +607,51 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     chat_id = update.effective_chat.id
     remember_chat_id(chat_id)
+
+    if data.startswith("run_order:"):
+        oid = data.split(":", 1)[1]
+        if oid in PROCESSING_ORDERS:
+            await query.answer("Automation is already actively running for this order!", show_alert=True)
+            return
+        await query.answer("Starting automation for order...")
+        cfg = get_config()
+        sb_url = cfg.get("supabase_url")
+        sb_key = cfg.get("supabase_key")
+        if sb_url and sb_key:
+            import urllib.request
+            endpoint = f"{sb_url.rstrip('/')}/rest/v1/orders?id=eq.{oid}"
+            req = urllib.request.Request(endpoint, headers={"apikey": sb_key, "Authorization": f"Bearer {sb_key}", "Content-Type": "application/json"})
+            try:
+                with urllib.request.urlopen(req, timeout=10) as r:
+                    res_data = json.loads(r.read().decode("utf-8"))
+                    if res_data and len(res_data) > 0:
+                        PROCESSING_ORDERS.add(oid)
+                        asyncio.create_task(execute_smm_order(res_data[0], context.bot, chat_id))
+            except Exception as e:
+                await query.message.reply_text(f"Error starting order: {e}")
+        return
+
+    if data.startswith("status_order:"):
+        oid = data.split(":", 1)[1]
+        cfg = get_config()
+        sb_url = cfg.get("supabase_url")
+        sb_key = cfg.get("supabase_key")
+        if sb_url and sb_key:
+            import urllib.request
+            endpoint = f"{sb_url.rstrip('/')}/rest/v1/orders?id=eq.{oid}"
+            req = urllib.request.Request(endpoint, headers={"apikey": sb_key, "Authorization": f"Bearer {sb_key}", "Content-Type": "application/json"})
+            try:
+                with urllib.request.urlopen(req, timeout=10) as r:
+                    res_data = json.loads(r.read().decode("utf-8"))
+                    if res_data and len(res_data) > 0:
+                        o = res_data[0]
+                        st = (o.get("status") or "unknown").upper()
+                        await query.answer(f"Order #{oid[:8]}: {st}", show_alert=True)
+                    else:
+                        await query.answer("Order not found.", show_alert=True)
+            except Exception as e:
+                await query.answer(f"Error: {e}", show_alert=True)
+        return
 
     if data == "stop_pipeline":
         await stop_current_automation(chat_id, context, message_to_edit=query.message)
