@@ -95,8 +95,9 @@ else
     sleep 0.5
 
     echo "🚀 Starting TikTok Motion Telegram Bot in companion mode..."
-    if [ "$OS_NAME" = "Darwin" ] && command -v osascript &>/dev/null && [ -n "$TERM_PROGRAM" ]; then
-        osascript -e 'tell application "Terminal" to do script "cd \"'"$DIR"'\" && [ -f venv/bin/activate ] && source venv/bin/activate; '"$RUN_CMD"' telegram_bot.py"' 2>/dev/null || ($RUN_CMD telegram_bot.py > bot.log 2>&1 &)
+    if [ "$OS_NAME" = "Darwin" ] && [ -f "$DIR/bot_mac.command" ]; then
+        chmod +x "$DIR/bot_mac.command" 2>/dev/null || true
+        open "$DIR/bot_mac.command"
     else
         $RUN_CMD telegram_bot.py > bot.log 2>&1 &
         echo "✅ Telegram Bot started in background (PID: $!) - logs streaming to bot.log"

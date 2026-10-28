@@ -56,7 +56,7 @@ echo "[*] Installing Playwright Chromium browser..."
 playwright install chromium
 
 # 6. Ensure executable permissions on all Mac & Unix scripts
-chmod +x setup_mac.sh motion.sh motion_mac.command menu_mac.command add_account_mac.command add_account.sh 2>/dev/null || true
+chmod +x setup_mac.sh motion.sh motion_mac.command menu_mac.command add_account_mac.command add_account.sh bot_mac.command 2>/dev/null || true
 
 echo ""
 echo "========================================================"

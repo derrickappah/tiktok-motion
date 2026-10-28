@@ -32,12 +32,9 @@ if [ -f ".bot_pid" ]; then
 fi
 sleep 0.5
 
-# 1. Launch Telegram Bot in companion window or background
-if command -v osascript &>/dev/null; then
-    osascript -e 'tell application "Terminal" to do script "cd \"'"$DIR"'\" && [ -f venv/bin/activate ] && source venv/bin/activate; python3 telegram_bot.py"' 2>/dev/null || (python3 telegram_bot.py > bot.log 2>&1 &)
-else
-    python3 telegram_bot.py > bot.log 2>&1 &
-fi
+# 1. Launch Telegram Bot in dedicated companion window using native macOS open command
+chmod +x "$DIR/bot_mac.command" 2>/dev/null || true
+open "$DIR/bot_mac.command"
 
 sleep 1
 

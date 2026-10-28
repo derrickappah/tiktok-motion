@@ -42,7 +42,7 @@ if exist .bot_pid (
 )
 
 :: 1. Launch Telegram Bot in dedicated companion window
-start "TikTok Motion Telegram Bot" %PY_CMD% telegram_bot.py
+start "TikTok Motion Telegram Bot" cmd /k %PY_CMD% telegram_bot.py
 
 :: 2. Launch Interactive Terminal Menu in this window
 %PY_CMD% app.py
