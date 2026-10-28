@@ -285,6 +285,54 @@ async def clear_history_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+
+async def orders_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Command handler for /orders to view SMM Panel TikTok Motion orders."""
+    if not is_authorized(update):
+        await update.message.reply_text("Unauthorized user.")
+        return
+
+    cfg = get_config()
+    sb_url = cfg.get("supabase_url")
+    sb_key = cfg.get("supabase_key")
+    if not sb_url or not sb_key:
+        await update.message.reply_text("Supabase credentials not configured in settings.json.")
+        return
+
+    import urllib.request
+    try:
+        endpoint = f"{sb_url.rstrip('/')}/rest/v1/orders?dynamic_provider=eq.tiktok_motion&order=created_at.desc&limit=5"
+        req = urllib.request.Request(
+            endpoint,
+            headers={
+                "apikey": sb_key,
+                "Authorization": f"Bearer {sb_key}",
+                "Content-Type": "application/json"
+            }
+        )
+        with urllib.request.urlopen(req, timeout=10) as res:
+            orders = json.loads(res.read().decode("utf-8")) if res.status == 200 else []
+        
+        if not orders:
+            await update.message.reply_text("No TikTok Motion orders found yet.")
+            return
+
+        lines = ["Recent TikTok Motion Orders:\n"]
+        for o in orders:
+            oid = (o.get("id") or "")[:8]
+            st = (o.get("status") or "unknown").upper()
+            qty = o.get("quantity") or 1
+            action = "SAVE" if "save" in (o.get("comments") or "") else "LIKE"
+            lines.append(f"#{oid} | {action} ({qty}x) | {st}")
+            link = o.get("link") or ""
+            if link:
+                lines.append(f"{link}\n")
+
+        await update.message.reply_text("\n".join(lines))
+    except Exception as e:
+        await update.message.reply_text(f"Error fetching orders: {e}")
+
+
 def remember_chat_id(chat_id: int):
     """Automatically saves the active chat_id so the bot can push startup notifications directly."""
     try:
@@ -1015,6 +1063,7 @@ def main():
         app.add_handler(CommandHandler("cancel", stop_cmd))
         app.add_handler(CommandHandler("history", history_cmd))
         app.add_handler(CommandHandler("clear_history", clear_history_cmd))
+        app.add_handler(CommandHandler("orders", orders_cmd))
         app.add_handler(CallbackQueryHandler(button_callback))
         app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
         app.run_polling(drop_pending_updates=True)

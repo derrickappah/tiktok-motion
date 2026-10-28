@@ -11,5 +11,7 @@
   },
   "gemini_api_key": "",
   "telegram_bot_token": "8631803473:AAG_sHfA7xp-9pffyO0sBW_2LyCNMo2Dbw4",
-  "telegram_chat_id": "1125716702"
+  "telegram_chat_id": "1125716702",
+  "supabase_url": "https://spihsvdchouynfbsotwq.supabase.co",
+  "supabase_key": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNwaWhzdmRjaG91eW5mYnNvdHdxIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2MzU5OTY5MCwiZXhwIjoyMDc5MTc1NjkwfQ.B7R0O6NeugY0alSd3ZTGlalGWQ9VstDzCfHmZoP-2iQ"
 }

@@ -3,9 +3,10 @@ title TikTok Motion by Dee
 cls
 
 echo ===================================================
-echo     TikTok Motion - Bot & Menu Controller
+echo     TikTok Motion - Bot, Worker & Menu Controller
 echo ===================================================
 echo [*] Starting Telegram Bot in companion window...
+echo [*] Starting PC Automation Worker in companion window...
 echo [*] Opening Terminal Menu in this window...
 echo.
 
@@ -36,6 +37,7 @@ if "%PY_CMD%"=="" (
 
 :: Terminate any previous bot instance to prevent Telegram Conflict error
 taskkill /F /FI "WINDOWTITLE eq TikTok Motion Telegram Bot*" 2>nul
+taskkill /F /FI "WINDOWTITLE eq TikTok Motion PC Worker*" 2>nul
 if exist .bot_pid (
     for /f "usebackq tokens=*" %%p in (".bot_pid") do taskkill /F /PID %%p 2>nul
     del /f /q .bot_pid 2>nul
@@ -44,11 +46,15 @@ if exist .bot_pid (
 :: 1. Launch Telegram Bot in dedicated companion window
 start "TikTok Motion Telegram Bot" cmd /k %PY_CMD% telegram_bot.py
 
-:: 2. Launch Interactive Terminal Menu in this window
+:: 2. Launch PC Automation Worker in dedicated companion window
+start "TikTok Motion PC Worker" cmd /k %PY_CMD% pc_worker.py
+
+:: 3. Launch Interactive Terminal Menu in this window
 %PY_CMD% app.py
 
-:: Clean up companion bot on exit
+:: Clean up companion processes on exit
 taskkill /F /FI "WINDOWTITLE eq TikTok Motion Telegram Bot*" 2>nul
+taskkill /F /FI "WINDOWTITLE eq TikTok Motion PC Worker*" 2>nul
 if exist .bot_pid (
     for /f "usebackq tokens=*" %%p in (".bot_pid") do taskkill /F /PID %%p 2>nul
     del /f /q .bot_pid 2>nul
